@@ -45,26 +45,55 @@ import adminRoutes from './routes/adminRoutes.js';
 const app = express();
 
 // Middleware
-const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:5173', 'http://localhost:5174'];
+const allowedOrigins = process.env.CORS_ORIGIN 
+  ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
+  : ['http://localhost:5173', 'http://localhost:5174'];
 
+console.log('🔐 CORS Configuration:');
+console.log('   Allowed Origins:', allowedOrigins);
+
+// CORS middleware with detailed logging
 app.use(cors({
   origin: function (origin, callback) {
-    // allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1 && !origin.includes('localhost')) {
-      return callback(new Error('The CORS policy for this site does not allow access from the specified Origin.'), false);
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      console.log('✅ CORS: No origin (mobile/curl)');
+      return callback(null, true);
     }
-    return callback(null, true);
-  },
-  credentials: true,
-}));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(morgan('dev'));
 
-// Serve static files from React build (if it exists)
-const distPath = path.join(__dirname, '../dist');
-app.use(express.static(distPath));
+    // Log incoming origin
+    console.log(`🔍 CORS: Incoming origin: ${origin}`);
+
+    // Check if origin is in allowed list
+    const isAllowed = allowedOrigins.some(allowedOrigin => {
+      // Exact match
+      if (allowedOrigin === origin) return true;
+      // Wildcard match for localhost
+      if (allowedOrigin.includes('localhost') && origin.includes('localhost')) return true;
+      return false;
+    });
+
+    if (isAllowed) {
+      console.log(`✅ CORS: Origin allowed: ${origin}`);
+      return callback(null, true);
+    } else {
+      console.warn(`❌ CORS: Origin rejected: ${origin}`);
+      return callback(new Error('CORS policy violation'), false);
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: true,
+  maxAge: 86400, // 24 hours
+}));
+
+// Debug middleware - log all incoming requests
+app.use((req, res, next) => {
+  console.log(`📨 ${req.method} ${req.path}`);
+  console.log(`   Origin: ${req.headers.origin || 'none'}`);
+  console.log(`   User-Agent: ${req.headers['user-agent']?.substring(0, 50) || 'none'}`);
+  next();
+});
 
 // API Routes
 app.use(`/api/${process.env.API_VERSION}/auth`, authRoutes);

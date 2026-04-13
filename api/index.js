@@ -32,23 +32,58 @@ const app = express();
 
 // Middleware
 const allowedOrigins = process.env.CORS_ORIGIN 
-  ? process.env.CORS_ORIGIN.split(',') 
+  ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
   : ['http://localhost:5173', 'http://localhost:5174'];
 
+console.log('🔐 CORS Configuration (Vercel):');
+console.log('   Allowed Origins:', allowedOrigins);
+
+// CORS middleware with detailed logging
 app.use(cors({
   origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1 && !origin.includes('localhost')) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      console.log('✅ CORS: No origin (mobile/curl)');
+      return callback(null, true);
+    }
+
+    // Log incoming origin
+    console.log(`🔍 CORS: Incoming origin: ${origin}`);
+
+    // Check if origin is in allowed list
+    const isAllowed = allowedOrigins.some(allowedOrigin => {
+      // Exact match
+      if (allowedOrigin === origin) return true;
+      // Wildcard match for localhost
+      if (allowedOrigin.includes('localhost') && origin.includes('localhost')) return true;
+      return false;
+    });
+
+    if (isAllowed) {
+      console.log(`✅ CORS: Origin allowed: ${origin}`);
+      return callback(null, true);
+    } else {
+      console.warn(`❌ CORS: Origin rejected: ${origin}`);
       return callback(new Error('CORS policy violation'), false);
     }
-    return callback(null, true);
   },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   credentials: true,
+  maxAge: 86400, // 24 hours
 }));
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(morgan('dev'));
+// Debug middleware - log all incoming requests
+app.use((req, res, next) => {
+  console.log(`📨 ${req.method} ${req.path}`);
+  console.log(`   Origin: ${req.headers.origin || 'none'}`);
+  console.log(`   User-Agent: ${req.headers['user-agent']?.substring(0, 50) || 'none'}`);
+  next();
+});
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(morgan('combined'));
 
 // API Routes
 const apiVersion = process.env.API_VERSION || 'v1';
@@ -66,7 +101,20 @@ app.use(`/api/${apiVersion}/admin`, adminRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'Server is running', timestamp: new Date().toISOString() });
+  res.status(200).json({ 
+    status: 'Server is running', 
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV 
+  });
+});
+
+// Root endpoint
+app.get('/', (req, res) => {
+  res.status(200).json({ 
+    message: 'Ticketa Backend API',
+    version: apiVersion,
+    status: 'running'
+  });
 });
 
 // Debug endpoint - check environment variables (development only)
@@ -90,10 +138,11 @@ app.get('/debug/env', (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error('Error:', err);
   res.status(err.status || 500).json({
     message: err.message || 'Internal server error',
     status: err.status || 500,
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 });
 
@@ -102,4 +151,5 @@ app.use((req, res) => {
   res.status(404).json({ message: 'Route not found' });
 });
 
+// Export for Vercel
 export default app;

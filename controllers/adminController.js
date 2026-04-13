@@ -257,99 +257,126 @@ export const getDashboardStats = async (req, res) => {
   try {
     console.log('📊 Fetching admin dashboard stats...');
 
-    // Query 1: Total events
-    console.log('⏳ Querying total events...');
-    const eventsResult = await supabase.from('events').select('id', { count: 'exact', head: true });
-    console.log('✅ Events query result:', { count: eventsResult.count, error: eventsResult.error });
-    if (eventsResult.error) {
-      console.error('❌ Events query error:', eventsResult.error);
-      throw new Error(`Events query failed: ${eventsResult.error.message}`);
-    }
-
-    // Query 2: Total users
-    console.log('⏳ Querying total users...');
-    const usersResult = await supabase.from('users').select('id', { count: 'exact', head: true });
-    console.log('✅ Users query result:', { count: usersResult.count, error: usersResult.error });
-    if (usersResult.error) {
-      console.error('❌ Users query error:', usersResult.error);
-      throw new Error(`Users query failed: ${usersResult.error.message}`);
-    }
-
-    // Query 3: All transactions (for revenue, orders, commission)
-    console.log('⏳ Querying all transactions...');
-    const transactionsResult = await supabase.from('transactions').select('total_amount, platform_commission, status');
-    console.log('✅ Transactions query result:', { rows: transactionsResult.data?.length, error: transactionsResult.error });
-    if (transactionsResult.error) {
-      console.error('❌ Transactions query error:', transactionsResult.error);
-      throw new Error(`Transactions query failed: ${transactionsResult.error.message}`);
-    }
-
-    // Query 4: Active events (future dates)
-    console.log('⏳ Querying active events (date > now)...');
-    const now = new Date().toISOString();
-    console.log('   Current timestamp:', now);
-    const activeEventsResult = await supabase
-      .from('events')
-      .select('id', { count: 'exact', head: true })
-      .gt('date', now);
-    console.log('✅ Active events query result:', { count: activeEventsResult.count, error: activeEventsResult.error });
-    if (activeEventsResult.error) {
-      console.error('❌ Active events query error:', activeEventsResult.error);
-      throw new Error(`Active events query failed: ${activeEventsResult.error.message}`);
-    }
-
-    // Query 5: Organizers count
-    console.log('⏳ Querying organizers (role = organizer)...');
-    const organizersResult = await supabase
-      .from('users')
-      .select('id', { count: 'exact', head: true })
-      .eq('role', 'organizer');
-    console.log('✅ Organizers query result:', { count: organizersResult.count, error: organizersResult.error });
-    if (organizersResult.error) {
-      console.error('❌ Organizers query error:', organizersResult.error);
-      throw new Error(`Organizers query failed: ${organizersResult.error.message}`);
-    }
-
-    // Query 6: Pending withdrawal requests
-    console.log('⏳ Querying pending withdrawal requests...');
-    const pendingWithdrawalsResult = await supabase
-      .from('withdrawals')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'pending');
-    console.log('✅ Pending withdrawals query result:', { count: pendingWithdrawalsResult.count, error: pendingWithdrawalsResult.error });
-    if (pendingWithdrawalsResult.error) {
-      console.error('❌ Pending withdrawals query error:', pendingWithdrawalsResult.error);
-      throw new Error(`Pending withdrawals query failed: ${pendingWithdrawalsResult.error.message}`);
-    }
-
-    // Calculate totals from transactions
-    console.log('⏳ Calculating totals from transactions...');
-    const successTransactions = transactionsResult.data?.filter(t => t.status === 'success') || [];
-    const pendingTransactions = transactionsResult.data?.filter(t => t.status === 'pending') || [];
-
-    const totalRevenue = successTransactions.reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
-    const platformCommission = successTransactions.reduce((sum, t) => sum + Number(t.platform_commission || 0), 0);
-
-    console.log('✅ Calculations complete:', {
-      successTransactions: successTransactions.length,
-      pendingTransactions: pendingTransactions.length,
-      totalRevenue,
-      platformCommission,
-    });
-
+    // Default stats
     const stats = {
-      totalEvents: eventsResult.count ?? 0,
-      totalOrders: transactionsResult.data?.length ?? 0,
-      totalRevenue: totalRevenue,
-      successfulPayments: successTransactions.length,
-      pendingPayments: pendingTransactions.length,
-      platformCommission: platformCommission,
-      activeEvents: activeEventsResult.count ?? 0,
-      organizers: organizersResult.count ?? 0,
-      pendingWithdrawals: pendingWithdrawalsResult.count ?? 0,
+      totalEvents: 0,
+      totalOrders: 0,
+      totalRevenue: 0,
+      successfulPayments: 0,
+      pendingPayments: 0,
+      platformCommission: 0,
+      activeEvents: 0,
+      organizers: 0,
+      pendingWithdrawals: 0,
     };
 
-    console.log('✅ All dashboard stats fetched successfully:', stats);
+    // Query 1: Total events (with error handling)
+    try {
+      console.log('⏳ Querying total events...');
+      const eventsResult = await supabase.from('events').select('id', { count: 'exact', head: true });
+      if (!eventsResult.error) {
+        stats.totalEvents = eventsResult.count ?? 0;
+        console.log('✅ Total events:', stats.totalEvents);
+      } else {
+        console.warn('⚠️ Events query warning:', eventsResult.error.message);
+      }
+    } catch (err) {
+      console.warn('⚠️ Events query failed:', err.message);
+    }
+
+    // Query 2: Total users (with error handling)
+    try {
+      console.log('⏳ Querying total users...');
+      const usersResult = await supabase.from('users').select('id', { count: 'exact', head: true });
+      if (!usersResult.error) {
+        console.log('✅ Total users:', usersResult.count ?? 0);
+      } else {
+        console.warn('⚠️ Users query warning:', usersResult.error.message);
+      }
+    } catch (err) {
+      console.warn('⚠️ Users query failed:', err.message);
+    }
+
+    // Query 3: All transactions (with error handling)
+    try {
+      console.log('⏳ Querying all transactions...');
+      const transactionsResult = await supabase.from('transactions').select('total_amount, platform_commission, status');
+      if (!transactionsResult.error && transactionsResult.data) {
+        const successTransactions = transactionsResult.data.filter(t => t.status === 'success') || [];
+        const pendingTransactions = transactionsResult.data.filter(t => t.status === 'pending') || [];
+
+        stats.totalOrders = transactionsResult.data.length;
+        stats.successfulPayments = successTransactions.length;
+        stats.pendingPayments = pendingTransactions.length;
+        stats.totalRevenue = successTransactions.reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
+        stats.platformCommission = successTransactions.reduce((sum, t) => sum + Number(t.platform_commission || 0), 0);
+
+        console.log('✅ Transactions stats:', {
+          total: stats.totalOrders,
+          successful: stats.successfulPayments,
+          pending: stats.pendingPayments,
+          revenue: stats.totalRevenue,
+        });
+      } else {
+        console.warn('⚠️ Transactions query warning:', transactionsResult.error?.message);
+      }
+    } catch (err) {
+      console.warn('⚠️ Transactions query failed:', err.message);
+    }
+
+    // Query 4: Active events (with error handling)
+    try {
+      console.log('⏳ Querying active events...');
+      const now = new Date().toISOString();
+      const activeEventsResult = await supabase
+        .from('events')
+        .select('id', { count: 'exact', head: true })
+        .gt('date', now);
+      if (!activeEventsResult.error) {
+        stats.activeEvents = activeEventsResult.count ?? 0;
+        console.log('✅ Active events:', stats.activeEvents);
+      } else {
+        console.warn('⚠️ Active events query warning:', activeEventsResult.error.message);
+      }
+    } catch (err) {
+      console.warn('⚠️ Active events query failed:', err.message);
+    }
+
+    // Query 5: Organizers count (with error handling)
+    try {
+      console.log('⏳ Querying organizers...');
+      const organizersResult = await supabase
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+        .eq('role', 'organizer');
+      if (!organizersResult.error) {
+        stats.organizers = organizersResult.count ?? 0;
+        console.log('✅ Organizers:', stats.organizers);
+      } else {
+        console.warn('⚠️ Organizers query warning:', organizersResult.error.message);
+      }
+    } catch (err) {
+      console.warn('⚠️ Organizers query failed:', err.message);
+    }
+
+    // Query 6: Pending withdrawals (with error handling)
+    try {
+      console.log('⏳ Querying pending withdrawals...');
+      const pendingWithdrawalsResult = await supabase
+        .from('withdrawals')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending');
+      if (!pendingWithdrawalsResult.error) {
+        stats.pendingWithdrawals = pendingWithdrawalsResult.count ?? 0;
+        console.log('✅ Pending withdrawals:', stats.pendingWithdrawals);
+      } else {
+        console.warn('⚠️ Pending withdrawals query warning:', pendingWithdrawalsResult.error.message);
+      }
+    } catch (err) {
+      console.warn('⚠️ Pending withdrawals query failed:', err.message);
+    }
+
+    console.log('✅ Dashboard stats compiled:', stats);
 
     return res.status(200).json({
       success: true,
@@ -357,13 +384,10 @@ export const getDashboardStats = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ FULL ERROR in getDashboardStats:', error);
-    console.error('❌ Error message:', error.message);
-    console.error('❌ Error stack:', error.stack);
     return res.status(500).json({
       success: false,
       error: 'Failed to fetch dashboard stats',
       message: error.message,
-      details: error.stack,
     });
   }
 };
