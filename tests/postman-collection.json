@@ -1,0 +1,323 @@
+{
+  "info": {
+    "name": "Ticketa API",
+    "description": "Complete API collection for Ticketa Backend",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "POST /auth/signup",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"organizer@example.com\",\n  \"password\": \"SecurePassword123!\",\n  \"name\": \"Event Organizer\",\n  \"role\": \"organizer\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/auth/signup",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "auth", "signup"]
+            }
+          }
+        },
+        {
+          "name": "POST /auth/login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"organizer@example.com\",\n  \"password\": \"SecurePassword123!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Events",
+      "item": [
+        {
+          "name": "GET /events",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/events",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "events"]
+            }
+          }
+        },
+        {
+          "name": "GET /events/:id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/events/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "events", "1"]
+            }
+          }
+        },
+        {
+          "name": "POST /events",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Concert 2024\",\n  \"description\": \"Amazing concert\",\n  \"date\": \"2024-06-15T19:00:00Z\",\n  \"location\": \"Main Hall\",\n  \"capacity\": 1000\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/events",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "events"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tickets",
+      "item": [
+        {
+          "name": "GET /tickets",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/tickets",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "tickets"]
+            }
+          }
+        },
+        {
+          "name": "POST /tickets",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"event-id\",\n  \"type\": \"standard\",\n  \"price\": 5000,\n  \"quantity\": 100\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/tickets",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "tickets"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "POST /payments",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 5000,\n  \"email\": \"customer@example.com\",\n  \"reference\": \"unique-reference\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/payments",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "payments"]
+            }
+          }
+        },
+        {
+          "name": "GET /payments/:reference",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/payments/unique-reference",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "payments", "unique-reference"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Wallet",
+      "item": [
+        {
+          "name": "GET /wallet",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/wallet",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "wallet"]
+            }
+          }
+        },
+        {
+          "name": "POST /wallet/credit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 10000,\n  \"description\": \"Event earnings\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/wallet/credit",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "wallet", "credit"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Withdrawals",
+      "item": [
+        {
+          "name": "POST /withdrawals",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 10000,\n  \"bankCode\": \"001\",\n  \"accountNumber\": \"1234567890\",\n  \"accountName\": \"John Doe\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/withdrawals",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "withdrawals"]
+            }
+          }
+        },
+        {
+          "name": "GET /withdrawals",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/withdrawals",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "withdrawals"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5001",
+      "type": "string"
+    },
+    {
+      "key": "api_version",
+      "value": "v1",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
