@@ -1,5 +1,6 @@
 import { supabase } from '../utils/supabaseClient.js';
 import { createOrganizerWallet } from '../services/walletService.js';
+import { successResponse, errorResponse, createdResponse } from '../utils/responseFormatter.js';
 
 export const signUpOrganizerOrAdmin = async (req, res) => {
   try {
@@ -17,7 +18,7 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
     });
 
     if (authError) {
-      return res.status(400).json({ error: authError.message });
+      return errorResponse(res, authError, 'Signup failed', 400);
     }
 
     // Create user profile
@@ -33,7 +34,7 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
       ]);
 
     if (profileError) {
-      return res.status(400).json({ error: profileError.message });
+      return errorResponse(res, profileError, 'Failed to create user profile', 400);
     }
 
     // 🔑 Auto-create wallet for organizers
@@ -49,13 +50,11 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
       }
     }
 
-    res.json({
-      success: true,
-      message: 'Signup successful',
+    return createdResponse(res, {
       user: authData.user,
-    });
+    }, 'Signup successful');
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return errorResponse(res, error, 'Signup failed', 500);
   }
 };
 
@@ -69,7 +68,7 @@ export const loginOrganizerOrAdmin = async (req, res) => {
     });
 
     if (error) {
-      return res.status(400).json({ error: error.message });
+      return errorResponse(res, error, 'Login failed', 400);
     }
 
     // Get user role
@@ -79,13 +78,12 @@ export const loginOrganizerOrAdmin = async (req, res) => {
       .eq('id', data.user.id)
       .single();
 
-    res.json({
-      success: true,
+    return successResponse(res, {
       user: data.user,
       role: userData?.role,
       session: data.session,
-    });
+    }, 'Login successful');
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return errorResponse(res, error, 'Login failed', 500);
   }
 };

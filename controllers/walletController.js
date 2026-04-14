@@ -1,5 +1,6 @@
 import { supabase } from '../utils/supabaseClient.js';
 import { logAudit } from '../services/auditService.js';
+import { successResponse, errorResponse, unauthorizedResponse, notFoundResponse, badRequestResponse } from '../utils/responseFormatter.js';
 
 /**
  * Get organizer wallet balance
@@ -9,7 +10,7 @@ export const getWalletBalance = async (req, res) => {
     const organizerId = req.user?.id;
 
     if (!organizerId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return unauthorizedResponse(res, 'Unauthorized');
     }
 
     const { data: wallet, error } = await supabase
@@ -19,7 +20,7 @@ export const getWalletBalance = async (req, res) => {
       .single();
 
     if (error && error.code !== 'PGRST116') {
-      return res.status(500).json({ error: 'Failed to fetch wallet' });
+      return errorResponse(res, error, 'Failed to fetch wallet', 500);
     }
 
     // Return default wallet if not found
@@ -30,13 +31,10 @@ export const getWalletBalance = async (req, res) => {
       total_earned: 0,
     };
 
-    res.json({
-      success: true,
-      wallet: wallet || defaultWallet,
-    });
+    return successResponse(res, wallet || defaultWallet, 'Wallet fetched successfully');
   } catch (error) {
     console.error('Get wallet error:', error);
-    res.status(500).json({ error: 'Failed to get wallet' });
+    return errorResponse(res, error, 'Failed to get wallet', 500);
   }
 };
 
@@ -49,7 +47,7 @@ export const getWalletHistory = async (req, res) => {
     const { limit = 50, offset = 0 } = req.query;
 
     if (!organizerId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return unauthorizedResponse(res, 'Unauthorized');
     }
 
     const { data: transactions, error, count } = await supabase
@@ -60,19 +58,18 @@ export const getWalletHistory = async (req, res) => {
       .range(offset, offset + limit - 1);
 
     if (error) {
-      return res.status(500).json({ error: 'Failed to fetch history' });
+      return errorResponse(res, error, 'Failed to fetch history', 500);
     }
 
-    res.json({
-      success: true,
+    return successResponse(res, {
       transactions,
       total: count,
       limit,
       offset,
-    });
+    }, 'Transaction history fetched successfully');
   } catch (error) {
     console.error('Get wallet history error:', error);
-    res.status(500).json({ error: 'Failed to get wallet history' });
+    return errorResponse(res, error, 'Failed to get wallet history', 500);
   }
 };
 
@@ -86,11 +83,11 @@ export const requestWithdrawal = async (req, res) => {
     const { amount } = req.body;
 
     if (!organizerId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return unauthorizedResponse(res, 'Unauthorized');
     }
 
     if (!amount || amount <= 0) {
-      return res.status(400).json({ error: 'Invalid withdrawal amount' });
+      return badRequestResponse(res, 'Invalid withdrawal amount');
     }
 
     // Fetch organizer profile
@@ -101,21 +98,17 @@ export const requestWithdrawal = async (req, res) => {
       .single();
 
     if (orgError || !organizer) {
-      return res.status(404).json({ error: 'Organizer not found' });
+      return notFoundResponse(res, 'Organizer not found');
     }
 
     // Check KYC verification
     if (!organizer.kyc_verified) {
-      return res.status(400).json({
-        error: 'KYC verification required before withdrawal',
-      });
+      return badRequestResponse(res, 'KYC verification required before withdrawal');
     }
 
     // Check bank details
     if (!organizer.bank_account_number || !organizer.bank_code) {
-      return res.status(400).json({
-        error: 'Bank details required for withdrawal',
-      });
+      return badRequestResponse(res, 'Bank details required for withdrawal');
     }
 
     // Fetch wallet
@@ -126,15 +119,12 @@ export const requestWithdrawal = async (req, res) => {
       .single();
 
     if (walletError || !wallet) {
-      return res.status(404).json({ error: 'Wallet not found' });
+      return notFoundResponse(res, 'Wallet not found');
     }
 
     // Check available balance
     if (parseFloat(wallet.available_balance) < parseFloat(amount)) {
-      return res.status(400).json({
-        error: 'Insufficient balance',
-        available: wallet.available_balance,
-      });
+      return badRequestResponse(res, 'Insufficient balance');
     }
 
     // Generate withdrawal reference
@@ -158,7 +148,7 @@ export const requestWithdrawal = async (req, res) => {
       .single();
 
     if (withdrawalError) {
-      return res.status(500).json({ error: 'Failed to create withdrawal' });
+      return errorResponse(res, withdrawalError, 'Failed to create withdrawal', 500);
     }
 
     // Deduct from available balance, add to pending
@@ -199,14 +189,10 @@ export const requestWithdrawal = async (req, res) => {
       changes: { amount, status: 'pending' },
     });
 
-    res.json({
-      success: true,
-      message: 'Withdrawal request created',
-      withdrawal,
-    });
+    return successResponse(res, withdrawal, 'Withdrawal request created', 201);
   } catch (error) {
     console.error('Request withdrawal error:', error);
-    res.status(500).json({ error: 'Failed to request withdrawal' });
+    return errorResponse(res, error, 'Failed to request withdrawal', 500);
   }
 };
 
@@ -219,7 +205,7 @@ export const getWithdrawals = async (req, res) => {
     const { limit = 50, offset = 0 } = req.query;
 
     if (!organizerId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return unauthorizedResponse(res, 'Unauthorized');
     }
 
     const { data: withdrawals, error, count } = await supabase
@@ -230,19 +216,18 @@ export const getWithdrawals = async (req, res) => {
       .range(offset, offset + limit - 1);
 
     if (error) {
-      return res.status(500).json({ error: 'Failed to fetch withdrawals' });
+      return errorResponse(res, error, 'Failed to fetch withdrawals', 500);
     }
 
-    res.json({
-      success: true,
+    return successResponse(res, {
       withdrawals,
       total: count,
       limit,
       offset,
-    });
+    }, 'Withdrawals fetched successfully');
   } catch (error) {
     console.error('Get withdrawals error:', error);
-    res.status(500).json({ error: 'Failed to get withdrawals' });
+    return errorResponse(res, error, 'Failed to get withdrawals', 500);
   }
 };
 
@@ -254,7 +239,7 @@ export const getEarningsSummary = async (req, res) => {
     const organizerId = req.user?.id;
 
     if (!organizerId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return unauthorizedResponse(res, 'Unauthorized');
     }
 
     // Get wallet
@@ -289,18 +274,15 @@ export const getEarningsSummary = async (req, res) => {
 
     const totalPending = pendingWithdrawals?.reduce((sum, w) => sum + parseFloat(w.amount), 0) || 0;
 
-    res.json({
-      success: true,
-      summary: {
-        total_earned: wallet?.total_earned || 0,
-        available_balance: wallet?.available_balance || 0,
-        pending_balance: wallet?.pending_balance || 0,
-        pending_withdrawals: totalPending,
-        transaction_count: transactionCount || 0,
-      },
-    });
+    return successResponse(res, {
+      total_earned: wallet?.total_earned || 0,
+      available_balance: wallet?.available_balance || 0,
+      pending_balance: wallet?.pending_balance || 0,
+      pending_withdrawals: totalPending,
+      transaction_count: transactionCount || 0,
+    }, 'Earnings summary fetched successfully');
   } catch (error) {
     console.error('Get earnings summary error:', error);
-    res.status(500).json({ error: 'Failed to get earnings summary' });
+    return errorResponse(res, error, 'Failed to get earnings summary', 500);
   }
 };

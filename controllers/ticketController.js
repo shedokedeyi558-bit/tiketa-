@@ -1,4 +1,5 @@
 import { supabase } from '../utils/supabaseClient.js';
+import { successResponse, errorResponse, createdResponse, notFoundResponse } from '../utils/responseFormatter.js';
 
 // Anonymous ticket purchase (no auth required)
 export const createTicket = async (req, res) => {
@@ -22,12 +23,12 @@ export const createTicket = async (req, res) => {
       .select();
 
     if (error) {
-      return res.status(400).json({ error: error.message });
+      return errorResponse(res, error, 'Failed to create ticket', 400);
     }
 
-    res.json({ success: true, ticket: data[0] });
+    return createdResponse(res, data[0], 'Ticket created successfully');
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return errorResponse(res, error, 'Failed to create ticket', 500);
   }
 };
 
@@ -43,12 +44,12 @@ export const getTicketByReference = async (req, res) => {
       .single();
 
     if (error) {
-      return res.status(404).json({ error: 'Ticket not found' });
+      return notFoundResponse(res, 'Ticket not found');
     }
 
-    res.json({ success: true, ticket: data });
+    return successResponse(res, data, 'Ticket fetched successfully');
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return errorResponse(res, error, 'Failed to fetch ticket', 500);
   }
 };
 
@@ -64,11 +65,11 @@ export const updateTicketPaymentStatus = async (req, res) => {
       .select();
 
     if (error) {
-      return res.status(400).json({ error: error.message });
+      return errorResponse(res, error, 'Failed to update ticket', 400);
     }
 
-    res.json({ success: true, ticket: data[0] });
+    return successResponse(res, data[0], 'Ticket updated successfully');
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return errorResponse(res, error, 'Failed to update ticket', 500);
   }
 };
