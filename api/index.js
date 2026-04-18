@@ -80,6 +80,11 @@ app.use(cors({
 // Handle preflight requests explicitly
 app.options('*', cors());
 
+// Body parser middleware - MUST be before routes
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(morgan('combined'));
+
 // Debug middleware - log all incoming requests
 app.use((req, res, next) => {
   console.log(`📨 ${req.method} ${req.path}`);
@@ -87,10 +92,6 @@ app.use((req, res, next) => {
   console.log(`   User-Agent: ${req.headers['user-agent']?.substring(0, 50) || 'none'}`);
   next();
 });
-
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(morgan('combined'));
 
 // API Routes
 const apiVersion = process.env.API_VERSION || 'v1';
