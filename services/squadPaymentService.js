@@ -2,7 +2,7 @@ import axios from 'axios';
 import { supabase } from '../utils/supabaseClient.js';
 
 const SQUADCO_API_KEY = process.env.SQUADCO_API_KEY;
-const SQUADCO_API_URL = 'https://sandbox-api-d.squadco.com';
+const SQUADCO_API_URL = process.env.SQUADCO_API_URL || 'https://api-d.squadco.com';
 
 /**
  * Initialize payment with Squad API
