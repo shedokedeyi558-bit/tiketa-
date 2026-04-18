@@ -45,9 +45,12 @@ import adminRoutes from './routes/adminRoutes.js';
 const app = express();
 
 // Middleware
-const allowedOrigins = process.env.CORS_ORIGIN 
-  ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
-  : ['http://localhost:5173', 'http://localhost:5174'];
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'https://ticketa-topaz.vercel.app',
+  'https://tiketa-alpha.vercel.app'
+];
 
 console.log('🔐 CORS Configuration:');
 console.log('   Allowed Origins:', allowedOrigins);
@@ -71,7 +74,7 @@ app.use(cors({
       // Wildcard match for localhost
       if (allowedOrigin.includes('localhost') && origin.includes('localhost')) return true;
       return false;
-    });
+    }) || /\.vercel\.app$/.test(origin); // Allow all Vercel deployments
 
     if (isAllowed) {
       console.log(`✅ CORS: Origin allowed: ${origin}`);
