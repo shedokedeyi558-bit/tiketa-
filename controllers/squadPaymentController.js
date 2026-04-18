@@ -20,6 +20,11 @@ import { creditOrganizerWallet } from '../services/walletService.js';
  * }
  */
 export const initiatePaymentController = async (req, res) => {
+  console.log('🚀 [SQUAD PAYMENT] Initiate payment handler called');
+  console.log('📨 Request origin:', req.headers.origin);
+  console.log('📨 Request method:', req.method);
+  console.log('📨 Request body:', req.body);
+  
   try {
     const { eventId, cartItems, attendees, buyerEmail, buyerName, amount, callbackUrl } = req.body;
 

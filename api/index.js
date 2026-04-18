@@ -74,7 +74,11 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   credentials: true,
   maxAge: 86400, // 24 hours
+  preflightContinue: false
 }));
+
+// Handle preflight requests explicitly
+app.options('*', cors());
 
 // Debug middleware - log all incoming requests
 app.use((req, res, next) => {
