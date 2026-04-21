@@ -25,10 +25,33 @@ export const getOrganizerEvents = async (req, res) => {
 
     console.log('Events found:', data?.length ?? 0);
 
+    // 🔑 CRITICAL: Calculate tickets remaining for each event with proper logic
+    const eventsWithTickets = (data ?? []).map(event => {
+      const totalTickets = event.total_tickets;
+      const ticketsSold = event.tickets_sold || 0;
+
+      let displayTotalTickets;
+      let displayTicketsRemaining;
+
+      if (!totalTickets || totalTickets === 0) {
+        displayTotalTickets = 'Unlimited';
+        displayTicketsRemaining = 'Unlimited';
+      } else {
+        displayTotalTickets = totalTickets;
+        displayTicketsRemaining = Math.max(0, totalTickets - ticketsSold);
+      }
+
+      return {
+        ...event,
+        total_tickets: displayTotalTickets,
+        tickets_remaining: displayTicketsRemaining,
+      };
+    });
+
     return res.json({
       success: true,
       message: 'Events fetched successfully',
-      data: data ?? [],
+      data: eventsWithTickets,
     });
   } catch (err) {
     console.error('getOrganizerEvents error:', err);
@@ -42,14 +65,61 @@ export const getOrganizerEvents = async (req, res) => {
 // Get all events
 export const getAllEvents = async (req, res) => {
   try {
-    // TODO: Fetch from database
-    res.status(200).json({
+    console.log('📖 Fetching all public events');
+
+    // Fetch all active events from database
+    const { data, error } = await supabase
+      .from('events')
+      .select('*')
+      .eq('status', 'active')
+      .order('date', { ascending: true });
+
+    if (error) {
+      console.error('❌ Error fetching events:', error);
+      return res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+
+    console.log('✅ Events found:', data?.length ?? 0);
+
+    // 🔑 CRITICAL: Calculate tickets remaining for each event with proper logic
+    const eventsWithTickets = (data ?? []).map(event => {
+      const totalTickets = event.total_tickets;
+      const ticketsSold = event.tickets_sold || 0;
+
+      let displayTotalTickets;
+      let displayTicketsRemaining;
+
+      if (!totalTickets || totalTickets === 0) {
+        displayTotalTickets = 'Unlimited';
+        displayTicketsRemaining = 'Unlimited';
+      } else {
+        displayTotalTickets = totalTickets;
+        displayTicketsRemaining = Math.max(0, totalTickets - ticketsSold);
+      }
+
+      return {
+        ...event,
+        total_tickets: displayTotalTickets,
+        tickets_remaining: displayTicketsRemaining,
+      };
+    });
+
+    return res.status(200).json({
       success: true,
       message: 'Events fetched successfully',
-      data: [],
+      data: eventsWithTickets,
     });
   } catch (error) {
-    res.status(500).json({
+    console.error('❌ Get All Events Error:', {
+      message: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString(),
+    });
+
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
@@ -60,15 +130,97 @@ export const getAllEvents = async (req, res) => {
 export const getEventById = async (req, res) => {
   try {
     const { id } = req.params;
-    // TODO: Fetch from database
-    res.status(200).json({
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Event ID is required',
+      });
+    }
+
+    console.log('📖 Fetching event details for ID:', id);
+
+    // Fetch event from database
+    const { data: event, error: eventError } = await supabase
+      .from('events')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (eventError) {
+      console.error('❌ Error fetching event:', eventError);
+      return res.status(404).json({
+        success: false,
+        error: 'Event not found',
+        message: eventError.message,
+      });
+    }
+
+    console.log('✅ Event found:', event.title);
+
+    // 🔑 CRITICAL: Calculate tickets remaining with proper logic
+    const totalTickets = event.total_tickets;
+    const ticketsSold = event.tickets_sold || 0;
+
+    // Determine display values
+    let displayTotalTickets;
+    let displayTicketsRemaining;
+
+    if (!totalTickets || totalTickets === 0) {
+      // If total_tickets is 0 or null, show "Unlimited"
+      displayTotalTickets = 'Unlimited';
+      displayTicketsRemaining = 'Unlimited';
+      console.log('🎫 Event has unlimited tickets');
+    } else {
+      // Calculate remaining tickets, never go below 0
+      displayTotalTickets = totalTickets;
+      displayTicketsRemaining = Math.max(0, totalTickets - ticketsSold);
+      console.log('🎫 Ticket calculation:', {
+        total: totalTickets,
+        sold: ticketsSold,
+        remaining: displayTicketsRemaining,
+      });
+    }
+
+    // Build response with calculated values
+    const eventData = {
+      id: event.id,
+      title: event.title,
+      description: event.description,
+      date: event.date,
+      end_date: event.end_date,
+      location: event.location,
+      organizer_id: event.organizer_id,
+      status: event.status,
+      total_tickets: displayTotalTickets,
+      tickets_sold: ticketsSold,
+      tickets_remaining: displayTicketsRemaining,
+      created_at: event.created_at,
+      updated_at: event.updated_at,
+    };
+
+    console.log('✅ Event details compiled:', {
+      title: eventData.title,
+      total_tickets: eventData.total_tickets,
+      tickets_sold: eventData.tickets_sold,
+      tickets_remaining: eventData.tickets_remaining,
+    });
+
+    return res.status(200).json({
       success: true,
       message: 'Event fetched successfully',
-      data: {},
+      data: eventData,
     });
   } catch (error) {
-    res.status(500).json({
+    console.error('❌ Get Event By ID Error:', {
+      message: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString(),
+    });
+
+    return res.status(500).json({
       success: false,
+      error: 'Internal server error',
       message: error.message,
     });
   }
