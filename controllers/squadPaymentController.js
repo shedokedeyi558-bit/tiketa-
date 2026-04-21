@@ -509,6 +509,46 @@ export const verifyPaymentController = async (req, res) => {
 
     console.log('✅ Transaction updated to success');
 
+    // 🔑 CRITICAL: Update event tickets_sold count
+    console.log('🎫 Updating event tickets_sold count...');
+    try {
+      const { data: event, error: eventFetchError } = await supabase
+        .from('events')
+        .select('tickets_sold, total_tickets')
+        .eq('id', transaction.event_id)
+        .single();
+
+      if (eventFetchError) {
+        console.error('⚠️ Failed to fetch event:', eventFetchError);
+      } else {
+        const currentTicketsSold = event?.tickets_sold || 0;
+        const ticketQuantity = transaction.quantity || 1; // Default to 1 if not specified
+        const newTicketsSold = currentTicketsSold + ticketQuantity;
+
+        console.log('📊 Ticket count update:', {
+          event_id: transaction.event_id,
+          current_tickets_sold: currentTicketsSold,
+          quantity_purchased: ticketQuantity,
+          new_tickets_sold: newTicketsSold,
+          total_tickets: event?.total_tickets,
+        });
+
+        const { error: updateEventError } = await supabase
+          .from('events')
+          .update({ tickets_sold: newTicketsSold })
+          .eq('id', transaction.event_id);
+
+        if (updateEventError) {
+          console.error('⚠️ Failed to update event tickets_sold:', updateEventError);
+        } else {
+          console.log('✅ Event tickets_sold updated successfully');
+        }
+      }
+    } catch (eventError) {
+      console.error('⚠️ Error updating event tickets_sold (non-blocking):', eventError);
+      // Don't fail the payment verification if event update fails
+    }
+
     // 🔑 CRITICAL: Credit organizer wallet after successful payment
     if (transaction.organizer_earnings && transaction.organizer_earnings > 0) {
       console.log('💰 Crediting organizer wallet...');
