@@ -129,7 +129,7 @@ export const initiatePaymentController = async (req, res) => {
     
     // 🔑 CRITICAL: Calculate fees and commission
     const processingFee = 100; // ₦100 fixed processing fee
-    const platformCommission = Math.round(amount * 0.05); // 5% platform commission
+    const platformCommission = Math.round(amount * 0.03); // 3% platform commission (changed from 5%)
     const organizerEarnings = amount - processingFee - platformCommission; // Organizer gets remainder
     
     console.log('💵 FEES CALCULATED:', {
