@@ -3,6 +3,12 @@ import { supabase } from '../utils/supabaseClient.js';
 import { verifySquadcoPayment, initiateSquadcoPayment } from '../services/squadcoService.js';
 import { generateTicket, generateQRCode } from '../services/ticketService.js';
 import { logAudit } from '../services/auditService.js';
+import { 
+  sendBuyerConfirmationEmail, 
+  sendOrganizerNotificationEmail, 
+  sendTicketDetailsEmail,
+  getOrganizerEmail 
+} from '../services/emailService.js';
 
 const PLATFORM_COMMISSION_PERCENTAGE = 3;
 const PROCESSING_FEE = 100; // ₦100
@@ -515,7 +521,7 @@ export const verifyPayment = async (req, res) => {
 
 /**
  * STEP 3: Process Verified Payment
- * Credit wallet, generate ticket, record earnings
+ * Credit wallet, generate ticket, record earnings, send emails
  */
 async function processVerifiedPayment(transaction, squadcoVerification, req) {
   try {
@@ -563,7 +569,48 @@ async function processVerifiedPayment(transaction, squadcoVerification, req) {
         .eq('id', transaction.event_id);
     }
 
-    // 6. Log audit
+    // 6. Fetch event details for email
+    const { data: event } = await supabase
+      .from('events')
+      .select('*')
+      .eq('id', transaction.event_id)
+      .single();
+
+    // 7. 📧 SEND EMAILS - New notification flow
+    console.log('📧 Starting email notification flow...');
+
+    // 7a. Send buyer confirmation email
+    console.log('📧 Sending buyer confirmation email...');
+    const buyerEmailResult = await sendBuyerConfirmationEmail(transaction, event);
+    if (!buyerEmailResult.success) {
+      console.warn('⚠️ Failed to send buyer confirmation email:', buyerEmailResult.error);
+      // Don't fail the payment if email fails
+    }
+
+    // 7b. Send organizer notification email
+    console.log('📧 Sending organizer notification email...');
+    const organizerData = await getOrganizerEmail(transaction.organizer_id);
+    if (organizerData && organizerData.email) {
+      const organizerEmailResult = await sendOrganizerNotificationEmail(transaction, event, organizerData.email);
+      if (!organizerEmailResult.success) {
+        console.warn('⚠️ Failed to send organizer notification email:', organizerEmailResult.error);
+        // Don't fail the payment if email fails
+      }
+    } else {
+      console.warn('⚠️ Could not find organizer email for ID:', transaction.organizer_id);
+    }
+
+    // 7c. Send ticket details email to buyer
+    if (generatedTickets.length > 0) {
+      console.log('📧 Sending ticket details email...');
+      const ticketEmailResult = await sendTicketDetailsEmail(transaction, event, generatedTickets);
+      if (!ticketEmailResult.success) {
+        console.warn('⚠️ Failed to send ticket details email:', ticketEmailResult.error);
+        // Don't fail the payment if email fails
+      }
+    }
+
+    // 8. Log audit
     await logAudit({
       action: 'PAYMENT_PROCESSED',
       entity_type: 'transaction',
@@ -572,10 +619,17 @@ async function processVerifiedPayment(transaction, squadcoVerification, req) {
         status: 'success',
         tickets_generated: generatedTickets.length,
         organizer_earnings: transaction.organizer_earnings,
+        emails_sent: {
+          buyer_confirmation: buyerEmailResult?.success || false,
+          organizer_notification: organizerData ? true : false,
+          ticket_details: generatedTickets.length > 0 ? true : false,
+        },
       },
       ip_address: req.ip,
       user_agent: req.headers['user-agent'],
     });
+
+    console.log('✅ Payment processing complete with email notifications');
   } catch (error) {
     console.error('Payment processing error:', error);
     throw error;
