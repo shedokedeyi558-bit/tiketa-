@@ -240,9 +240,6 @@ export const approveWithdrawalController = async (req, res) => {
     });
   }
 };
-    });
-  }
-};
 
 /**
  * POST /api/v1/admin/payouts/withdrawals/:id/reject
