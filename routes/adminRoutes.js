@@ -40,10 +40,20 @@ router.get('/revenue', getRevenueAnalytics);
 
 // Payout management
 router.get('/payouts/withdrawals', getWithdrawalsController);
-router.post('/payouts/:id/approve', approveWithdrawalController);
-router.post('/payouts/:id/reject', rejectWithdrawalController);
-router.post('/payouts/:id/pay', payWithdrawalController);
 router.get('/payouts/organizers/recent', getRecentOrganizersController);
 router.get('/payouts/tickets/recent', getRecentTicketsController);
+
+// Approve, reject, pay - support both POST and PATCH methods
+router.options('/payouts/:id/approve', (req, res) => res.sendStatus(200));
+router.post('/payouts/:id/approve', approveWithdrawalController);
+router.patch('/payouts/:id/approve', approveWithdrawalController);
+
+router.options('/payouts/:id/reject', (req, res) => res.sendStatus(200));
+router.post('/payouts/:id/reject', rejectWithdrawalController);
+router.patch('/payouts/:id/reject', rejectWithdrawalController);
+
+router.options('/payouts/:id/pay', (req, res) => res.sendStatus(200));
+router.post('/payouts/:id/pay', payWithdrawalController);
+router.patch('/payouts/:id/pay', payWithdrawalController);
 
 export default router;
