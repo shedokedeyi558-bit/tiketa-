@@ -12,6 +12,7 @@ export const getWithdrawalsController = async (req, res) => {
     console.log('📋 Fetching all withdrawal requests with organizer details...');
 
     // 🔑 CRITICAL: Use join query to fetch organizer details in one query
+    // Try joining with users table (which contains organizer profiles)
     const { data: withdrawals, error } = await supabase
       .from('withdrawals')
       .select(`
@@ -87,14 +88,22 @@ export const approveWithdrawalController = async (req, res) => {
     const { id } = req.params;
     const adminId = req.user?.id;
 
+    console.log('🔍 Approve Withdrawal Request:', {
+      withdrawalId: id,
+      adminId,
+      timestamp: new Date().toISOString(),
+    });
+
     if (!id || !adminId) {
+      console.error('❌ Missing required parameters:', { id, adminId });
       return res.status(400).json({
         success: false,
         error: 'Missing required parameters',
+        message: 'Withdrawal ID and admin ID are required',
       });
     }
 
-    console.log(`✅ Approving withdrawal: ${id}`);
+    console.log(`📋 Fetching withdrawal: ${id}`);
 
     // Fetch withdrawal request
     const { data: withdrawal, error: fetchError } = await supabase
@@ -103,61 +112,134 @@ export const approveWithdrawalController = async (req, res) => {
       .eq('id', id)
       .single();
 
-    if (fetchError || !withdrawal) {
+    if (fetchError) {
+      console.error('❌ Withdrawal fetch error:', {
+        message: fetchError.message,
+        code: fetchError.code,
+        details: fetchError.details,
+        hint: fetchError.hint,
+        withdrawalId: id,
+      });
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch withdrawal',
+        message: fetchError.message,
+        details: fetchError.details,
+      });
+    }
+
+    if (!withdrawal) {
       console.error('❌ Withdrawal not found:', id);
       return res.status(404).json({
         success: false,
         error: 'Withdrawal request not found',
+        message: `No withdrawal found with ID: ${id}`,
       });
     }
 
+    console.log('✅ Withdrawal found:', {
+      id: withdrawal.id,
+      status: withdrawal.status,
+      amount: withdrawal.amount,
+      organizer_id: withdrawal.organizer_id,
+    });
+
     if (withdrawal.status !== 'pending') {
-      console.warn('❌ Withdrawal is not pending:', withdrawal.status);
+      console.warn('❌ Withdrawal is not pending:', {
+        withdrawalId: id,
+        currentStatus: withdrawal.status,
+      });
       return res.status(400).json({
         success: false,
         error: 'Invalid status',
-        message: `Withdrawal is already ${withdrawal.status}`,
+        message: `Withdrawal is already ${withdrawal.status}. Only pending withdrawals can be approved.`,
       });
     }
 
+    console.log(`📝 Updating withdrawal status to 'processing'...`);
+
     // Update withdrawal status to processing (admin approved it)
-    const { error: updateError } = await supabase
+    const { data: updatedWithdrawal, error: updateError } = await supabase
       .from('withdrawals')
       .update({
         status: 'processing',
         processed_at: new Date().toISOString(),
       })
-      .eq('id', id);
+      .eq('id', id)
+      .select()
+      .single();
 
     if (updateError) {
-      console.error('❌ Failed to update withdrawal:', updateError);
+      console.error('❌ Withdrawal update error:', {
+        message: updateError.message,
+        code: updateError.code,
+        details: updateError.details,
+        hint: updateError.hint,
+        withdrawalId: id,
+        stack: updateError.stack,
+      });
       return res.status(500).json({
         success: false,
         error: 'Failed to approve withdrawal',
         message: updateError.message,
+        details: updateError.details,
       });
     }
 
-    // Log action
-    await supabase.from('payout_logs').insert({
-      withdrawal_request_id: id,
-      admin_id: adminId,
-      action: 'approved',
-      note: 'Withdrawal approved by admin',
+    console.log('✅ Withdrawal status updated:', {
+      id: updatedWithdrawal.id,
+      status: updatedWithdrawal.status,
+      processed_at: updatedWithdrawal.processed_at,
     });
 
-    console.log(`✅ Withdrawal approved: ${id}`);
+    console.log(`📝 Logging approval action...`);
+
+    // Log action
+    const { error: logError } = await supabase
+      .from('payout_logs')
+      .insert({
+        withdrawal_request_id: id,
+        admin_id: adminId,
+        action: 'approved',
+        note: 'Withdrawal approved by admin',
+      });
+
+    if (logError) {
+      console.warn('⚠️ Failed to log approval action (non-blocking):', {
+        message: logError.message,
+        code: logError.code,
+      });
+      // Don't fail the approval if logging fails
+    } else {
+      console.log('✅ Approval action logged');
+    }
+
+    console.log(`✅ Withdrawal approved successfully: ${id}`);
 
     return res.status(200).json({
       success: true,
       message: 'Withdrawal approved successfully',
+      data: {
+        id: updatedWithdrawal.id,
+        status: updatedWithdrawal.status,
+        processed_at: updatedWithdrawal.processed_at,
+      },
     });
   } catch (error) {
-    console.error('❌ Approve Withdrawal Error:', error);
+    console.error('❌ Approve Withdrawal Error:', {
+      message: error.message,
+      stack: error.stack,
+      code: error.code,
+      timestamp: new Date().toISOString(),
+    });
     return res.status(500).json({
       success: false,
       error: 'Internal server error',
       message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+    });
+  }
+};
     });
   }
 };
@@ -173,15 +255,23 @@ export const rejectWithdrawalController = async (req, res) => {
     const { admin_note } = req.body;
     const adminId = req.user?.id;
 
+    console.log('🔍 Reject Withdrawal Request:', {
+      withdrawalId: id,
+      adminId,
+      admin_note,
+      timestamp: new Date().toISOString(),
+    });
+
     if (!id || !adminId || !admin_note) {
+      console.error('❌ Missing required parameters:', { id, adminId, admin_note });
       return res.status(400).json({
         success: false,
         error: 'Missing required parameters',
-        message: 'admin_note is required',
+        message: 'Withdrawal ID, admin ID, and admin_note are required',
       });
     }
 
-    console.log(`❌ Rejecting withdrawal: ${id}`);
+    console.log(`📋 Fetching withdrawal: ${id}`);
 
     // Fetch withdrawal request
     const { data: withdrawal, error: fetchError } = await supabase
@@ -190,41 +280,82 @@ export const rejectWithdrawalController = async (req, res) => {
       .eq('id', id)
       .single();
 
-    if (fetchError || !withdrawal) {
+    if (fetchError) {
+      console.error('❌ Withdrawal fetch error:', {
+        message: fetchError.message,
+        code: fetchError.code,
+        details: fetchError.details,
+        withdrawalId: id,
+      });
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch withdrawal',
+        message: fetchError.message,
+        details: fetchError.details,
+      });
+    }
+
+    if (!withdrawal) {
       console.error('❌ Withdrawal not found:', id);
       return res.status(404).json({
         success: false,
         error: 'Withdrawal request not found',
+        message: `No withdrawal found with ID: ${id}`,
       });
     }
 
+    console.log('✅ Withdrawal found:', {
+      id: withdrawal.id,
+      status: withdrawal.status,
+      amount: withdrawal.amount,
+      organizer_id: withdrawal.organizer_id,
+    });
+
     if (withdrawal.status !== 'pending') {
-      console.warn('❌ Withdrawal is not pending:', withdrawal.status);
+      console.warn('❌ Withdrawal is not pending:', {
+        withdrawalId: id,
+        currentStatus: withdrawal.status,
+      });
       return res.status(400).json({
         success: false,
         error: 'Invalid status',
-        message: `Withdrawal is already ${withdrawal.status}`,
+        message: `Withdrawal is already ${withdrawal.status}. Only pending withdrawals can be rejected.`,
       });
     }
 
+    console.log(`📝 Updating withdrawal status to 'failed'...`);
+
     // Update withdrawal status to failed
-    const { error: updateError } = await supabase
+    const { data: updatedWithdrawal, error: updateError } = await supabase
       .from('withdrawals')
       .update({
         status: 'failed',
         processed_at: new Date().toISOString(),
         failure_reason: admin_note,
       })
-      .eq('id', id);
+      .eq('id', id)
+      .select()
+      .single();
 
     if (updateError) {
-      console.error('❌ Failed to update withdrawal:', updateError);
+      console.error('❌ Withdrawal update error:', {
+        message: updateError.message,
+        code: updateError.code,
+        details: updateError.details,
+        withdrawalId: id,
+      });
       return res.status(500).json({
         success: false,
         error: 'Failed to reject withdrawal',
         message: updateError.message,
+        details: updateError.details,
       });
     }
+
+    console.log('✅ Withdrawal status updated to failed:', {
+      id: updatedWithdrawal.id,
+      status: updatedWithdrawal.status,
+    });
 
     // Refund organizer wallet
     console.log(`💰 Refunding ₦${withdrawal.amount} to organizer ${withdrawal.organizer_id}`);
@@ -234,7 +365,13 @@ export const rejectWithdrawalController = async (req, res) => {
     });
 
     if (refundError) {
-      console.error('❌ Failed to refund wallet:', refundError);
+      console.error('❌ Refund error:', {
+        message: refundError.message,
+        code: refundError.code,
+        details: refundError.details,
+        organizerId: withdrawal.organizer_id,
+        amount: withdrawal.amount,
+      });
       return res.status(500).json({
         success: false,
         error: 'Failed to refund wallet',
