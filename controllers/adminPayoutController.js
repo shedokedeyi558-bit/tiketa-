@@ -422,14 +422,20 @@ export const payWithdrawalController = async (req, res) => {
     const { id } = req.params;
     const adminId = req.user?.id;
 
+    console.log(`💳 Processing payout request:`, {
+      withdrawalId: id,
+      adminId,
+      timestamp: new Date().toISOString(),
+    });
+
     if (!id || !adminId) {
+      console.error('❌ Missing required parameters:', { id, adminId });
       return res.status(400).json({
         success: false,
         error: 'Missing required parameters',
+        message: 'Withdrawal ID and admin ID are required',
       });
     }
-
-    console.log(`💳 Processing payout: ${id}`);
 
     // Fetch withdrawal request
     const { data: withdrawal, error: fetchError } = await supabase
@@ -439,12 +445,25 @@ export const payWithdrawalController = async (req, res) => {
       .single();
 
     if (fetchError || !withdrawal) {
-      console.error('❌ Withdrawal not found:', id);
+      console.error('❌ Withdrawal not found:', {
+        id,
+        error: fetchError?.message,
+      });
       return res.status(404).json({
         success: false,
         error: 'Withdrawal request not found',
+        message: fetchError?.message || 'No withdrawal found with this ID',
       });
     }
+
+    console.log('✅ Withdrawal found:', {
+      id: withdrawal.id,
+      status: withdrawal.status,
+      amount: withdrawal.amount,
+      bank_name: withdrawal.bank_name,
+      account_number: withdrawal.bank_account_number,
+      account_name: withdrawal.account_name,
+    });
 
     if (withdrawal.status !== 'processing') {
       console.warn('❌ Withdrawal is not processing:', withdrawal.status);
@@ -459,8 +478,15 @@ export const payWithdrawalController = async (req, res) => {
     let bankCode;
     try {
       bankCode = validateAndGetBankCode(withdrawal.bank_name);
+      console.log(`✅ Bank code resolved:`, {
+        bank_name: withdrawal.bank_name,
+        bank_code: bankCode,
+      });
     } catch (bankError) {
-      console.error('❌ Bank code error:', bankError.message);
+      console.error('❌ Bank code error:', {
+        bank_name: withdrawal.bank_name,
+        error: bankError.message,
+      });
       return res.status(400).json({
         success: false,
         error: 'Bank not recognized',
@@ -469,24 +495,32 @@ export const payWithdrawalController = async (req, res) => {
     }
 
     // Call Squadco Transfer API
-    console.log(`📤 Calling Squadco Transfer API for ₦${withdrawal.amount}...`);
-
     const squadcoUrl = process.env.SQUADCO_API_URL || 'https://sandbox-api-d.squadco.com';
-    const transferReference = `PAY_${Date.now()}_${withdrawal.id}`;
+    const transferReference = `PAY_${Date.now()}_${withdrawal.id.substring(0, 8)}`;
+    const amountInKobo = Math.round(withdrawal.amount * 100);
+
+    const squadcoPayload = {
+      transaction_reference: transferReference,
+      amount: amountInKobo,
+      bank_code: bankCode,
+      account_number: withdrawal.bank_account_number,
+      account_name: withdrawal.account_name,
+      currency: 'NGN',
+      narration: `Ticketa payout - ${withdrawal.account_name}`,
+    };
+
+    console.log(`📤 Calling Squadco Transfer API:`, {
+      url: `${squadcoUrl}/payout/initiate`,
+      payload: squadcoPayload,
+      amount_ngn: withdrawal.amount,
+      amount_kobo: amountInKobo,
+    });
 
     let squadcoResponse;
     try {
       squadcoResponse = await axios.post(
         `${squadcoUrl}/payout/initiate`,
-        {
-          transaction_reference: transferReference,
-          amount: Math.round(withdrawal.amount * 100), // Convert to kobo
-          bank_code: bankCode,
-          account_number: withdrawal.bank_account_number,
-          account_name: withdrawal.account_name,
-          currency: 'NGN',
-          narration: `Ticketa payout - ${withdrawal.account_name}`,
-        },
+        squadcoPayload,
         {
           headers: {
             Authorization: `Bearer ${process.env.SQUADCO_API_KEY}`,
@@ -498,18 +532,24 @@ export const payWithdrawalController = async (req, res) => {
 
       console.log('✅ Squadco Transfer API response:', {
         status: squadcoResponse.status,
+        data: squadcoResponse.data,
         reference: squadcoResponse.data?.transaction_reference,
       });
     } catch (squadcoError) {
       console.error('❌ Squadco Transfer API error:', {
         status: squadcoError.response?.status,
-        message: squadcoError.response?.data?.message || squadcoError.message,
+        statusText: squadcoError.response?.statusText,
+        data: squadcoError.response?.data,
+        message: squadcoError.message,
+        url: squadcoError.config?.url,
+        payload: squadcoError.config?.data,
       });
 
       return res.status(502).json({
         success: false,
         error: 'Payment gateway error',
-        message: squadcoError.response?.data?.message || 'Failed to process payout with Squadco',
+        message: squadcoError.response?.data?.message || squadcoError.message || 'Failed to process payout with Squadco',
+        details: squadcoError.response?.data,
       });
     }
 
@@ -563,10 +603,17 @@ export const payWithdrawalController = async (req, res) => {
       message: 'Payment sent successfully',
       data: {
         squadco_reference: squadcoResponse.data?.transaction_reference || transferReference,
+        amount: withdrawal.amount,
+        account_number: withdrawal.bank_account_number,
+        bank_name: withdrawal.bank_name,
       },
     });
   } catch (error) {
-    console.error('❌ Pay Withdrawal Error:', error);
+    console.error('❌ Pay Withdrawal Error:', {
+      message: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString(),
+    });
     return res.status(500).json({
       success: false,
       error: 'Internal server error',

@@ -24,7 +24,7 @@ export const NIGERIAN_BANK_CODES = {
   'Unity Bank': '215',
   'Wema Bank': '035',
   'Zenith Bank': '057',
-  'Opay': '100004',
+  'Opay': '999992', // Squadco code for Opay
   'Palmpay': '100033',
   'Kuda Bank': '090267',
   'Moniepoint': '090405',
