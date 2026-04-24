@@ -91,6 +91,9 @@ export const approveWithdrawalController = async (req, res) => {
     console.log('🔍 Approve Withdrawal Request:', {
       withdrawalId: id,
       adminId,
+      method: req.method,
+      path: req.path,
+      url: req.originalUrl,
       timestamp: new Date().toISOString(),
     });
 
@@ -183,6 +186,15 @@ export const approveWithdrawalController = async (req, res) => {
         error: 'Failed to approve withdrawal',
         message: updateError.message,
         details: updateError.details,
+      });
+    }
+
+    if (!updatedWithdrawal) {
+      console.error('❌ No data returned from update:', id);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to approve withdrawal',
+        message: 'No data returned from database update',
       });
     }
 

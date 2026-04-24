@@ -40,10 +40,18 @@ router.get('/revenue', getRevenueAnalytics);
 
 // Payout management
 router.get('/payouts/withdrawals', getWithdrawalsController);
+// Accept both GET and POST for approve (frontend may be sending GET)
+router.get('/payouts/withdrawals/:id/approve', approveWithdrawalController);
 router.post('/payouts/withdrawals/:id/approve', approveWithdrawalController);
 router.post('/payouts/withdrawals/:id/reject', rejectWithdrawalController);
 router.post('/payouts/withdrawals/:id/pay', payWithdrawalController);
 router.get('/payouts/organizers/recent', getRecentOrganizersController);
 router.get('/payouts/tickets/recent', getRecentTicketsController);
+
+// Test route to verify routing works
+router.post('/payouts/test', (req, res) => {
+  console.log('✅ Test route hit!');
+  res.json({ ok: true, message: 'Test route works' });
+});
 
 export default router;
