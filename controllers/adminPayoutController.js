@@ -9,47 +9,66 @@ import { validateAndGetBankCode } from '../utils/bankCodes.js';
  */
 export const getWithdrawalsController = async (req, res) => {
   try {
-    console.log('📋 Fetching all withdrawal requests...');
+    console.log('📋 Fetching all withdrawal requests with organizer details...');
 
+    // 🔑 CRITICAL: Use join query to fetch organizer details in one query
     const { data: withdrawals, error } = await supabase
       .from('withdrawals')
-      .select('*')
+      .select(`
+        *,
+        users:organizer_id (
+          full_name,
+          email
+        )
+      `)
       .order('requested_at', { ascending: false });
 
     if (error) {
-      console.error('❌ Failed to fetch withdrawals:', error);
+      console.error('❌ Failed to fetch withdrawals:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        status: error.status,
+      });
       return res.status(500).json({
         success: false,
         error: 'Failed to fetch withdrawals',
         message: error.message,
+        details: error.details,
       });
     }
 
-    // Fetch organizer info for each withdrawal
-    const enrichedWithdrawals = await Promise.all(
-      (withdrawals || []).map(async (w) => {
-        const { data: user } = await supabase
-          .from('users')
-          .select('full_name, email')
-          .eq('id', w.organizer_id)
-          .single();
+    // 🔑 CRITICAL: Map withdrawals to include organizer info at top level
+    const enrichedWithdrawals = (withdrawals || []).map((w) => {
+      const organizerData = w.users;
+      
+      console.log(`📝 Processing withdrawal ${w.id}:`, {
+        organizer_id: w.organizer_id,
+        organizer_data: organizerData,
+        organizer_name: organizerData?.full_name || 'Unknown',
+        organizer_email: organizerData?.email || 'Unknown',
+      });
 
-        return {
-          ...w,
-          organizer_name: user?.full_name || 'Unknown',
-          organizer_email: user?.email || 'Unknown',
-        };
-      })
-    );
+      return {
+        ...w,
+        organizer_name: organizerData?.full_name || 'Unknown',
+        organizer_email: organizerData?.email || 'Unknown',
+      };
+    });
 
-    console.log(`✅ Fetched ${enrichedWithdrawals.length} withdrawal requests`);
+    console.log(`✅ Fetched ${enrichedWithdrawals.length} withdrawal requests with organizer details`);
 
     return res.status(200).json({
       success: true,
       data: enrichedWithdrawals,
     });
   } catch (error) {
-    console.error('❌ Get Withdrawals Error:', error);
+    console.error('❌ Get Withdrawals Error:', {
+      message: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString(),
+    });
     return res.status(500).json({
       success: false,
       error: 'Internal server error',
