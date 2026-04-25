@@ -516,8 +516,28 @@ export const payWithdrawalController = async (req, res) => {
       amount_kobo: amountInKobo,
     });
 
+    // ✅ CRITICAL: Wrap entire Squadco transfer API call in try/catch
     let squadcoResponse;
     try {
+      // Check if using sandbox environment
+      const isSandbox = squadcoUrl.includes('sandbox');
+      if (isSandbox) {
+        console.warn('⚠️ SANDBOX ENVIRONMENT DETECTED - Bank transfers not supported');
+        console.warn('📌 SQUADCO_API_URL:', squadcoUrl);
+        console.warn('💡 To enable live payouts, switch to live API keys and set SQUADCO_API_URL to https://api.squadco.com');
+        
+        // Return graceful error for sandbox
+        return res.status(400).json({
+          success: false,
+          error: 'Sandbox environment',
+          message: 'Transfer failed: Squadco sandbox does not support live bank transfers. Switch to live API keys to enable payouts.',
+          details: {
+            environment: 'sandbox',
+            action_required: 'Update SQUADCO_API_URL to https://api.squadco.com and use live API keys',
+          },
+        });
+      }
+
       squadcoResponse = await axios.post(
         `${squadcoUrl}/payout/initiate`,
         squadcoPayload,
@@ -536,6 +556,11 @@ export const payWithdrawalController = async (req, res) => {
         reference: squadcoResponse.data?.transaction_reference,
       });
     } catch (squadcoError) {
+      // ✅ Log exact error message
+      const errorMessage = squadcoError.response?.data?.message || 
+                          squadcoError.message || 
+                          'Failed to process payout with Squadco';
+      
       console.error('❌ Squadco Transfer API error:', {
         status: squadcoError.response?.status,
         statusText: squadcoError.response?.statusText,
@@ -543,13 +568,15 @@ export const payWithdrawalController = async (req, res) => {
         message: squadcoError.message,
         url: squadcoError.config?.url,
         payload: squadcoError.config?.data,
+        errorMessage: errorMessage,
       });
 
+      // ✅ Always return proper JSON response - never let it crash
       return res.status(502).json({
         success: false,
         error: 'Payment gateway error',
-        message: squadcoError.response?.data?.message || squadcoError.message || 'Failed to process payout with Squadco',
-        details: squadcoError.response?.data,
+        message: errorMessage,
+        details: squadcoError.response?.data || { error: squadcoError.message },
       });
     }
 
@@ -609,15 +636,18 @@ export const payWithdrawalController = async (req, res) => {
       },
     });
   } catch (error) {
+    // ✅ Catch any unhandled errors and return proper JSON response
     console.error('❌ Pay Withdrawal Error:', {
       message: error.message,
       stack: error.stack,
       timestamp: new Date().toISOString(),
     });
+    
+    // ✅ Always return valid JSON - never crash without responding
     return res.status(500).json({
       success: false,
       error: 'Internal server error',
-      message: error.message,
+      message: error.message || 'An unexpected error occurred during payout processing',
     });
   }
 };
