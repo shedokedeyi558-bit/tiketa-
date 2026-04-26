@@ -71,6 +71,29 @@ export const initiatePayment = async (req, res) => {
     
     console.log('✅ Event found:', { id: event.id, title: event.title, organizer_id: event.organizer_id });
 
+    // ✅ CRITICAL: Validate organizer exists before creating transaction
+    console.log('🔍 Validating organizer exists...');
+    const { data: organizer, error: orgError } = await supabase
+      .from('users')
+      .select('id, role')
+      .eq('id', event.organizer_id)
+      .eq('role', 'organizer')
+      .single();
+
+    if (orgError || !organizer) {
+      console.error('❌ Organizer not found or invalid:', {
+        organizer_id: event.organizer_id,
+        error: orgError?.message,
+      });
+      return res.status(400).json({
+        success: false,
+        message: 'Event organizer is invalid. Please contact support.',
+        error: 'Invalid organizer',
+      });
+    }
+
+    console.log('✅ Organizer validated:', organizer.id);
+
     // Generate unique transaction reference
     const reference = `TXN_${Date.now()}_${uuidv4()}`;
     
@@ -638,23 +661,47 @@ async function processVerifiedPayment(transaction, squadcoVerification, req) {
 
 /**
  * Credit organizer wallet
+ * ✅ CRITICAL: Validates organizer exists before crediting
  */
 async function creditOrganizerWallet(transaction) {
   try {
+    const organizerId = transaction.organizer_id;
+
+    // ✅ CRITICAL: Validate organizer exists
+    console.log('🔍 Validating organizer exists before wallet credit...');
+    const { data: organizer, error: orgError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('id', organizerId)
+      .eq('role', 'organizer')
+      .single();
+
+    if (orgError || !organizer) {
+      console.error('❌ Organizer not found for wallet credit:', {
+        organizerId,
+        error: orgError?.message,
+      });
+      throw new Error(`Organizer ${organizerId} not found`);
+    }
+
+    console.log('✅ Organizer validated for wallet credit');
+
     // Get or create wallet
     let { data: wallet } = await supabase
       .from('wallets')
       .select('*')
-      .eq('organizer_id', transaction.organizer_id)
+      .eq('organizer_id', organizerId)
       .maybeSingle();
 
     if (!wallet) {
+      console.log('⏳ Wallet not found, creating one...');
       const { data: newWallet } = await supabase
         .from('wallets')
-        .insert([{ organizer_id: transaction.organizer_id }])
+        .insert([{ organizer_id: organizerId }])
         .select()
         .single();
       wallet = newWallet;
+      console.log('✅ Wallet created');
     }
 
     // Update wallet balance
@@ -676,7 +723,7 @@ async function creditOrganizerWallet(transaction) {
       .insert([
         {
           wallet_id: wallet.id,
-          organizer_id: transaction.organizer_id,
+          organizer_id: organizerId,
           type: 'credit',
           amount: transaction.organizer_earnings,
           reference_id: transaction.id,
@@ -686,8 +733,10 @@ async function creditOrganizerWallet(transaction) {
           balance_after: newBalance,
         },
       ]);
+
+    console.log('✅ Wallet credited successfully');
   } catch (error) {
-    console.error('Wallet credit error:', error);
+    console.error('❌ Wallet credit error:', error);
     throw error;
   }
 }

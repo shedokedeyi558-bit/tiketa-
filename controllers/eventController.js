@@ -316,19 +316,191 @@ export const getEventById = async (req, res) => {
   }
 };
 
-// Create event
+/**
+ * ✅ CREATE EVENT - Organizer Only
+ * CRITICAL: Validates organizer exists before creating event
+ * 
+ * Request body:
+ * {
+ *   "title": "Event Title",
+ *   "description": "Event description",
+ *   "date": "2026-05-15",
+ *   "end_date": "2026-05-16",
+ *   "location": "Event location",
+ *   "total_tickets": 100,
+ *   "category": "Technology",
+ *   "image_url": "https://..."
+ * }
+ */
 export const createEvent = async (req, res) => {
   try {
-    const { title, description, date, location, price } = req.body;
-    // TODO: Save to database
-    res.status(201).json({
+    const organizerId = req.user?.id;
+    const { title, description, date, end_date, location, total_tickets, category, image_url } = req.body;
+
+    // ✅ CRITICAL: Validate organizer is authenticated
+    if (!organizerId) {
+      console.error('❌ No authenticated user');
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+        message: 'You must be logged in to create an event',
+      });
+    }
+
+    // ✅ CRITICAL: Validate required fields
+    if (!title || !date || !location) {
+      console.error('❌ Missing required fields:', { title, date, location });
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields',
+        message: 'Title, date, and location are required',
+      });
+    }
+
+    console.log('📝 Creating event for organizer:', {
+      organizerId,
+      title,
+      date,
+    });
+
+    // ✅ CRITICAL: Verify organizer exists in users table
+    console.log('🔍 Verifying organizer exists...');
+    const { data: organizer, error: orgError } = await supabase
+      .from('users')
+      .select('id, role, full_name, email')
+      .eq('id', organizerId)
+      .eq('role', 'organizer')
+      .single();
+
+    if (orgError || !organizer) {
+      console.error('❌ Organizer not found or not authorized:', {
+        organizerId,
+        error: orgError?.message,
+      });
+      return res.status(403).json({
+        success: false,
+        error: 'Organizer not found',
+        message: 'Your organizer profile does not exist. Please contact support.',
+        code: 'ORGANIZER_NOT_FOUND',
+      });
+    }
+
+    console.log('✅ Organizer verified:', organizer.full_name);
+
+    // ✅ CRITICAL: Verify organizer has a wallet
+    console.log('🔍 Verifying organizer wallet exists...');
+    const { data: wallet, error: walletError } = await supabase
+      .from('wallets')
+      .select('id')
+      .eq('organizer_id', organizerId)
+      .single();
+
+    if (walletError && walletError.code !== 'PGRST116') {
+      // PGRST116 = no rows returned (wallet doesn't exist)
+      console.error('❌ Wallet check failed:', walletError);
+      return res.status(500).json({
+        success: false,
+        error: 'Wallet verification failed',
+        message: walletError.message,
+      });
+    }
+
+    if (!wallet) {
+      console.warn('⚠️ Wallet does not exist for organizer, creating one...');
+      const { createOrganizerWallet } = await import('../services/walletService.js');
+      const walletResult = await createOrganizerWallet(organizerId);
+      
+      if (!walletResult.success) {
+        console.error('❌ Failed to create wallet:', walletResult.error);
+        return res.status(500).json({
+          success: false,
+          error: 'Wallet creation failed',
+          message: 'Could not create wallet for organizer',
+        });
+      }
+      console.log('✅ Wallet created for organizer');
+    } else {
+      console.log('✅ Organizer wallet verified');
+    }
+
+    // ✅ Create event with validated organizer_id
+    console.log('📝 Inserting event into database...');
+    const { data: event, error: eventError } = await supabase
+      .from('events')
+      .insert([
+        {
+          title,
+          description: description || '',
+          date,
+          end_date: end_date || date,
+          location,
+          organizer_id: organizerId, // ✅ Use authenticated user's ID
+          total_tickets: total_tickets || 0,
+          tickets_sold: 0,
+          status: 'active',
+          category: category || 'General',
+          image_url: image_url || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ])
+      .select()
+      .single();
+
+    if (eventError) {
+      console.error('❌ Event creation failed:', {
+        error: eventError.message,
+        code: eventError.code,
+        details: eventError.details,
+      });
+
+      // Handle specific error codes
+      if (eventError.code === '23503') {
+        return res.status(400).json({
+          success: false,
+          error: 'Foreign key constraint',
+          message: 'Organizer ID is invalid. Please contact support.',
+          code: 'INVALID_ORGANIZER_ID',
+        });
+      }
+
+      return res.status(500).json({
+        success: false,
+        error: 'Event creation failed',
+        message: eventError.message,
+      });
+    }
+
+    console.log('✅ Event created successfully:', {
+      id: event.id,
+      title: event.title,
+      organizer_id: event.organizer_id,
+    });
+
+    return res.status(201).json({
       success: true,
       message: 'Event created successfully',
-      data: {},
+      data: {
+        id: event.id,
+        title: event.title,
+        date: event.date,
+        location: event.location,
+        organizer_id: event.organizer_id,
+        status: event.status,
+        total_tickets: event.total_tickets,
+        tickets_remaining: event.total_tickets,
+      },
     });
   } catch (error) {
-    res.status(500).json({
+    console.error('❌ Create Event Error:', {
+      message: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString(),
+    });
+
+    return res.status(500).json({
       success: false,
+      error: 'Internal server error',
       message: error.message,
     });
   }

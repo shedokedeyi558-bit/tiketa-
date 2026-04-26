@@ -112,14 +112,40 @@ export const getAdminEvents = async (req, res) => {
 // Create event
 export const createAdminEvent = async (req, res) => {
   try {
-    const { title, description, date, time, location, image, ticketTypes } = req.body;
+    const { title, description, date, time, location, image, ticketTypes, organizer_id } = req.body;
 
-    // Validate required fields
+    // ✅ Validate required fields
     if (!title || !date || !location || !ticketTypes) {
       return res.status(400).json({
         success: false,
         message: 'Missing required fields: title, date, location, ticketTypes',
       });
+    }
+
+    // ✅ CRITICAL: If organizer_id is provided, validate it exists
+    let validatedOrganizerId = null;
+    if (organizer_id) {
+      console.log('🔍 Validating organizer exists...');
+      const { data: organizer, error: orgError } = await supabase
+        .from('users')
+        .select('id, role')
+        .eq('id', organizer_id)
+        .eq('role', 'organizer')
+        .single();
+
+      if (orgError || !organizer) {
+        console.error('❌ Organizer not found:', {
+          organizer_id,
+          error: orgError?.message,
+        });
+        return res.status(400).json({
+          success: false,
+          message: 'Organizer not found',
+          code: 'ORGANIZER_NOT_FOUND',
+        });
+      }
+      validatedOrganizerId = organizer_id;
+      console.log('✅ Organizer validated');
     }
 
     const { data, error } = await supabase
@@ -133,13 +159,32 @@ export const createAdminEvent = async (req, res) => {
           location,
           image,
           ticket_types: ticketTypes,
+          organizer_id: validatedOrganizerId, // ✅ Use validated organizer_id
           created_by: req.user.id,
           created_at: new Date().toISOString(),
         },
       ])
       .select();
 
-    if (error) throw error;
+    if (error) {
+      console.error('❌ Event creation failed:', {
+        error: error.message,
+        code: error.code,
+      });
+
+      // Handle foreign key constraint error
+      if (error.code === '23503') {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid organizer ID',
+          code: 'INVALID_ORGANIZER_ID',
+        });
+      }
+
+      throw error;
+    }
+
+    console.log('✅ Event created successfully:', data[0].id);
 
     res.status(201).json({
       success: true,
@@ -147,7 +192,7 @@ export const createAdminEvent = async (req, res) => {
       data: data[0],
     });
   } catch (error) {
-    console.error('Error creating event:', error);
+    console.error('❌ Error creating event:', error);
     res.status(500).json({
       success: false,
       message: error.message,
