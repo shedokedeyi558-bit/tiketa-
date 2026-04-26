@@ -399,11 +399,10 @@ export const getDashboardStats = async (req, res) => {
     // Query 4: Active events (with error handling)
     try {
       console.log('⏳ Querying active events from events table...');
-      const now = new Date().toISOString();
       const activeEventsResult = await supabase
         .from('events')
         .select('id', { count: 'exact', head: true })
-        .gt('date', now);
+        .eq('status', 'active');
       
       if (activeEventsResult.error) {
         console.error('❌ Active events query error:', {
