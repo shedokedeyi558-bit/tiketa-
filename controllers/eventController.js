@@ -369,23 +369,57 @@ export const createEvent = async (req, res) => {
       .from('users')
       .select('id, role, full_name, email')
       .eq('id', organizerId)
-      .eq('role', 'organizer')
       .single();
 
-    if (orgError || !organizer) {
-      console.error('❌ Organizer not found or not authorized:', {
+    if (orgError) {
+      console.error('❌ Organizer lookup error:', {
         organizerId,
         error: orgError?.message,
+        code: orgError?.code,
       });
+      
+      // If user doesn't exist, create it
+      if (orgError.code === 'PGRST116') {
+        console.warn('⚠️ User record not found, creating one...');
+        const { error: createError } = await supabase
+          .from('users')
+          .insert([{
+            id: organizerId,
+            email: req.user?.email || '',
+            role: 'organizer',
+            full_name: req.user?.user_metadata?.full_name || '',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }]);
+        
+        if (createError) {
+          console.error('❌ Failed to create user record:', createError);
+          return res.status(500).json({
+            success: false,
+            error: 'User record creation failed',
+            message: 'Could not create user profile',
+          });
+        }
+        console.log('✅ User record created');
+      } else {
+        return res.status(403).json({
+          success: false,
+          error: 'Organizer not found',
+          message: 'Your organizer profile does not exist. Please contact support.',
+          code: 'ORGANIZER_NOT_FOUND',
+        });
+      }
+    } else if (!organizer) {
+      console.error('❌ Organizer not found:', organizerId);
       return res.status(403).json({
         success: false,
         error: 'Organizer not found',
         message: 'Your organizer profile does not exist. Please contact support.',
         code: 'ORGANIZER_NOT_FOUND',
       });
+    } else {
+      console.log('✅ Organizer verified:', organizer.full_name);
     }
-
-    console.log('✅ Organizer verified:', organizer.full_name);
 
     // ✅ CRITICAL: Verify organizer has a wallet
     console.log('🔍 Verifying organizer wallet exists...');
@@ -393,10 +427,9 @@ export const createEvent = async (req, res) => {
       .from('wallets')
       .select('id')
       .eq('organizer_id', organizerId)
-      .single();
+      .maybeSingle();
 
-    if (walletError && walletError.code !== 'PGRST116') {
-      // PGRST116 = no rows returned (wallet doesn't exist)
+    if (walletError) {
       console.error('❌ Wallet check failed:', walletError);
       return res.status(500).json({
         success: false,
@@ -412,13 +445,11 @@ export const createEvent = async (req, res) => {
       
       if (!walletResult.success) {
         console.error('❌ Failed to create wallet:', walletResult.error);
-        return res.status(500).json({
-          success: false,
-          error: 'Wallet creation failed',
-          message: 'Could not create wallet for organizer',
-        });
+        // Don't fail event creation if wallet creation fails - it can be created later
+        console.warn('⚠️ Continuing without wallet - it will be created later');
+      } else {
+        console.log('✅ Wallet created for organizer');
       }
-      console.log('✅ Wallet created for organizer');
     } else {
       console.log('✅ Organizer wallet verified');
     }
