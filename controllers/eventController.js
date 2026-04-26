@@ -363,7 +363,38 @@ export const createEvent = async (req, res) => {
       date,
     });
 
-    // ✅ CRITICAL: Verify organizer exists in users table
+    // ✅ CRITICAL: Safety check - ensure organizer exists in users table
+    // This prevents foreign key constraint errors
+    console.log('🔒 Safety check: Ensuring organizer record exists in users table...');
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabaseAdmin = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+
+    const { error: upsertError } = await supabaseAdmin
+      .from('users')
+      .upsert({
+        id: organizerId,
+        email: req.user?.email || '',
+        role: 'organizer',
+        full_name: req.user?.user_metadata?.full_name || '',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id' });
+
+    if (upsertError) {
+      console.error('❌ Failed to ensure organizer record exists:', upsertError);
+      return res.status(500).json({
+        success: false,
+        error: 'User record verification failed',
+        message: 'Could not verify organizer profile',
+      });
+    }
+
+    console.log('✅ Organizer record verified/created in users table');
+
+    // ✅ Verify organizer exists in users table
     console.log('🔍 Verifying organizer exists...');
     const { data: organizer, error: orgError } = await supabase
       .from('users')
@@ -371,55 +402,20 @@ export const createEvent = async (req, res) => {
       .eq('id', organizerId)
       .single();
 
-    if (orgError) {
-      console.error('❌ Organizer lookup error:', {
+    if (orgError || !organizer) {
+      console.error('❌ Organizer verification failed:', {
         organizerId,
         error: orgError?.message,
-        code: orgError?.code,
       });
-      
-      // If user doesn't exist, create it
-      if (orgError.code === 'PGRST116') {
-        console.warn('⚠️ User record not found, creating one...');
-        const { error: createError } = await supabase
-          .from('users')
-          .insert([{
-            id: organizerId,
-            email: req.user?.email || '',
-            role: 'organizer',
-            full_name: req.user?.user_metadata?.full_name || '',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          }]);
-        
-        if (createError) {
-          console.error('❌ Failed to create user record:', createError);
-          return res.status(500).json({
-            success: false,
-            error: 'User record creation failed',
-            message: 'Could not create user profile',
-          });
-        }
-        console.log('✅ User record created');
-      } else {
-        return res.status(403).json({
-          success: false,
-          error: 'Organizer not found',
-          message: 'Your organizer profile does not exist. Please contact support.',
-          code: 'ORGANIZER_NOT_FOUND',
-        });
-      }
-    } else if (!organizer) {
-      console.error('❌ Organizer not found:', organizerId);
       return res.status(403).json({
         success: false,
         error: 'Organizer not found',
         message: 'Your organizer profile does not exist. Please contact support.',
         code: 'ORGANIZER_NOT_FOUND',
       });
-    } else {
-      console.log('✅ Organizer verified:', organizer.full_name);
     }
+
+    console.log('✅ Organizer verified:', organizer.full_name);
 
     // ✅ CRITICAL: Verify organizer has a wallet
     console.log('🔍 Verifying organizer wallet exists...');
