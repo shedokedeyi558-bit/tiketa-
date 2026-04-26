@@ -1,31 +1,75 @@
 import { supabase } from '../utils/supabaseClient.js';
 
-// Get organizer's upcoming events
+/**
+ * ✅ UNIFIED ORGANIZER EVENTS ENDPOINT
+ * Single source of truth for all organizer event queries
+ * 
+ * Query Parameters:
+ * - status: 'all' | 'active' | 'cancelled' | 'completed' (default: 'active')
+ * - dateFilter: 'all' | 'upcoming' | 'past' (default: 'upcoming')
+ * - sortBy: 'date' | 'title' (default: 'date')
+ * - sortOrder: 'asc' | 'desc' (default: 'asc')
+ * 
+ * Examples:
+ * GET /api/v1/events/organizer → Upcoming active events (default)
+ * GET /api/v1/events/organizer?status=all → All events
+ * GET /api/v1/events/organizer?dateFilter=all → All active events (past + future)
+ * GET /api/v1/events/organizer?status=all&dateFilter=all → All events (no filters)
+ */
 export const getOrganizerEvents = async (req, res) => {
   try {
     const userId = req.user.id;
-    const today = new Date().toISOString();
-    console.log('Getting events for organizer:', userId);
+    
+    // ✅ Parse query parameters with defaults
+    const status = req.query.status || 'active'; // 'all', 'active', 'cancelled', 'completed'
+    const dateFilter = req.query.dateFilter || 'upcoming'; // 'all', 'upcoming', 'past'
+    const sortBy = req.query.sortBy || 'date'; // 'date', 'title'
+    const sortOrder = req.query.sortOrder === 'desc' ? false : true; // true = asc, false = desc
 
-    const { data, error } = await supabase
+    console.log('📅 Getting events for organizer:', {
+      userId,
+      status,
+      dateFilter,
+      sortBy,
+      sortOrder: sortOrder ? 'asc' : 'desc',
+    });
+
+    // ✅ Build query
+    let query = supabase
       .from('events')
       .select('*')
-      .eq('organizer_id', userId)
-      .eq('status', 'active')
-      .gte('date', today)
-      .order('date', { ascending: true });
+      .eq('organizer_id', userId);
+
+    // ✅ Apply status filter
+    if (status !== 'all') {
+      query = query.eq('status', status);
+    }
+
+    // ✅ Apply date filter
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    if (dateFilter === 'upcoming') {
+      query = query.gte('date', today);
+    } else if (dateFilter === 'past') {
+      query = query.lt('date', today);
+    }
+    // If dateFilter === 'all', no date filter applied
+
+    // ✅ Apply sorting
+    query = query.order(sortBy, { ascending: sortOrder });
+
+    const { data, error } = await query;
 
     if (error) {
-      console.error('Events fetch error:', error);
+      console.error('❌ Events fetch error:', error);
       return res.status(500).json({
         success: false,
         error: error.message,
       });
     }
 
-    console.log('Events found:', data?.length ?? 0);
+    console.log('✅ Events found:', data?.length ?? 0);
 
-    // 🔑 CRITICAL: Calculate tickets remaining for each event with proper logic
+    // ✅ CRITICAL: Calculate tickets remaining for each event with proper logic
     const eventsWithTickets = (data ?? []).map(event => {
       const totalTickets = event.total_tickets;
       const ticketsSold = event.tickets_sold || 0;
@@ -52,9 +96,18 @@ export const getOrganizerEvents = async (req, res) => {
       success: true,
       message: 'Events fetched successfully',
       data: eventsWithTickets,
+      meta: {
+        count: eventsWithTickets.length,
+        filters: {
+          status,
+          dateFilter,
+          sortBy,
+          sortOrder: sortOrder ? 'asc' : 'desc',
+        },
+      },
     });
   } catch (err) {
-    console.error('getOrganizerEvents error:', err);
+    console.error('❌ getOrganizerEvents error:', err);
     return res.status(500).json({
       success: false,
       error: err.message,
@@ -62,17 +115,45 @@ export const getOrganizerEvents = async (req, res) => {
   }
 };
 
-// Get all events
+/**
+ * ✅ PUBLIC EVENTS ENDPOINT
+ * Returns all active events (public browse page)
+ * 
+ * Query Parameters:
+ * - dateFilter: 'all' | 'upcoming' | 'past' (default: 'all')
+ * - sortBy: 'date' | 'title' (default: 'date')
+ * - sortOrder: 'asc' | 'desc' (default: 'asc')
+ * 
+ * Note: Always returns only 'active' status events
+ */
 export const getAllEvents = async (req, res) => {
   try {
     console.log('📖 Fetching all public events');
 
-    // Fetch all active events from database
-    const { data, error } = await supabase
+    // ✅ Parse query parameters
+    const dateFilter = req.query.dateFilter || 'all'; // 'all', 'upcoming', 'past'
+    const sortBy = req.query.sortBy || 'date'; // 'date', 'title'
+    const sortOrder = req.query.sortOrder === 'desc' ? false : true; // true = asc, false = desc
+
+    // ✅ Build query - always filter by active status
+    let query = supabase
       .from('events')
       .select('*')
-      .eq('status', 'active')
-      .order('date', { ascending: true });
+      .eq('status', 'active');
+
+    // ✅ Apply date filter
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    if (dateFilter === 'upcoming') {
+      query = query.gte('date', today);
+    } else if (dateFilter === 'past') {
+      query = query.lt('date', today);
+    }
+    // If dateFilter === 'all', no date filter applied
+
+    // ✅ Apply sorting
+    query = query.order(sortBy, { ascending: sortOrder });
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('❌ Error fetching events:', error);
@@ -84,7 +165,7 @@ export const getAllEvents = async (req, res) => {
 
     console.log('✅ Events found:', data?.length ?? 0);
 
-    // 🔑 CRITICAL: Calculate tickets remaining for each event with proper logic
+    // ✅ CRITICAL: Calculate tickets remaining for each event with proper logic
     const eventsWithTickets = (data ?? []).map(event => {
       const totalTickets = event.total_tickets;
       const ticketsSold = event.tickets_sold || 0;
@@ -111,6 +192,15 @@ export const getAllEvents = async (req, res) => {
       success: true,
       message: 'Events fetched successfully',
       data: eventsWithTickets,
+      meta: {
+        count: eventsWithTickets.length,
+        filters: {
+          status: 'active',
+          dateFilter,
+          sortBy,
+          sortOrder: sortOrder ? 'asc' : 'desc',
+        },
+      },
     });
   } catch (error) {
     console.error('❌ Get All Events Error:', {
