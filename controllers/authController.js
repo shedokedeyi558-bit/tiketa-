@@ -1,6 +1,13 @@
 import { supabase } from '../utils/supabaseClient.js';
+import { createClient } from '@supabase/supabase-js';
 import { createOrganizerWallet } from '../services/walletService.js';
 import { successResponse, errorResponse, createdResponse } from '../utils/responseFormatter.js';
+
+// ✅ Create admin client with service role key (bypasses RLS)
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 export const signUpOrganizerOrAdmin = async (req, res) => {
   try {
@@ -36,12 +43,12 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
 
     console.log('✅ Auth user created:', authData.user.id);
 
-    // ✅ CRITICAL: Create user profile with role
-    // The database trigger will auto-create this, but we do it explicitly to ensure it happens
-    console.log('📝 Creating user profile...');
-    const { data: userProfile, error: profileError } = await supabase
+    // ✅ CRITICAL: Create user profile using service role (bypasses RLS)
+    // This ensures the profile is created even if triggers don't fire
+    console.log('📝 Creating user profile with service role...');
+    const { data: userProfile, error: profileError } = await supabaseAdmin
       .from('users')
-      .insert([
+      .upsert(
         {
           id: authData.user.id,
           email,
@@ -50,21 +57,21 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
-      ])
+        { onConflict: 'id' }
+      )
       .select()
       .single();
 
     if (profileError) {
-      // If profile already exists (from trigger), that's OK
-      if (profileError.code === '23505') {
-        console.log('ℹ️ User profile already exists (created by trigger)');
-      } else {
-        console.error('❌ User profile creation failed:', profileError);
-        return errorResponse(res, profileError, 'Failed to create user profile', 400);
-      }
-    } else {
-      console.log('✅ User profile created:', userProfile.id);
+      console.error('❌ User profile creation failed:', {
+        error: profileError.message,
+        code: profileError.code,
+        details: profileError.details,
+      });
+      return errorResponse(res, profileError, 'Failed to create user profile', 400);
     }
+
+    console.log('✅ User profile created/updated:', userProfile.id);
 
     // ✅ Auto-create wallet for organizers
     if (role === 'organizer') {
