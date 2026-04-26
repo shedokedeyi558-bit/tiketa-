@@ -5,10 +5,10 @@ export const getAdminEvents = async (req, res) => {
   try {
     console.log('📅 Fetching all events for admin...');
 
-    // Fetch all events
+    // ✅ Fetch all events with organizer info using join
     const { data: events, error: eventsError } = await supabase
       .from('events')
-      .select('*')
+      .select('*, users:organizer_id(full_name, email)')
       .order('date', { ascending: false });
 
     if (eventsError) {
@@ -16,26 +16,7 @@ export const getAdminEvents = async (req, res) => {
       throw eventsError;
     }
 
-    // Get unique organizer IDs
-    const organizerIds = [...new Set((events || []).map(e => e.organizer_id).filter(Boolean))];
-
-    // Batch fetch organizer names
-    let organizerMap = {};
-    if (organizerIds.length > 0) {
-      const { data: organizers, error: orgError } = await supabase
-        .from('users')
-        .select('id, full_name, email')
-        .in('id', organizerIds);
-
-      if (orgError) {
-        console.error('⚠️ Failed to fetch organizer names:', orgError);
-      } else {
-        organizerMap = (organizers || []).reduce((acc, org) => {
-          acc[org.id] = org;
-          return acc;
-        }, {});
-      }
-    }
+    console.log(`✅ Fetched ${events?.length || 0} events with organizer info`);
 
     // Fetch all successful transactions for revenue calculation
     const { data: transactions, error: txError } = await supabase
@@ -57,33 +38,22 @@ export const getAdminEvents = async (req, res) => {
       txMap[tx.event_id].organizer_earnings += Number(tx.organizer_earnings || 0);
     });
 
-    // Enrich events with organizer names and revenue
+    // Enrich events with revenue data
     const enriched = (events || []).map((event) => {
-      const organizer = organizerMap[event.organizer_id];
       const eventTx = txMap[event.id] || { revenue: 0, organizer_earnings: 0 };
-      const now = new Date();
-      const eventDate = new Date(event.date);
-
-      // Determine status badge
-      let statusBadge = 'Active';
-      if (event.status === 'cancelled') {
-        statusBadge = 'Cancelled';
-      } else if (event.status === 'completed') {
-        statusBadge = 'Completed';
-      } else if (eventDate < now && event.status === 'active') {
-        statusBadge = 'Ended';
-      }
-
+      
+      // ✅ Use database status directly - no date-based calculation
+      // This ensures consistency with organizer dashboard
       return {
         id: event.id,
         title: event.title,
         organizer_id: event.organizer_id,
-        organizer_name: organizer?.full_name || 'Unknown',
-        organizer_email: organizer?.email || '',
+        organizer_name: event.users?.full_name || 'Unknown',
+        organizer_email: event.users?.email || '',
         date: event.date,
         location: event.location,
-        status: event.status,
-        status_badge: statusBadge,
+        status: event.status, // ✅ Use database status directly
+        status_badge: event.status.charAt(0).toUpperCase() + event.status.slice(1), // Capitalize first letter
         tickets_sold: event.tickets_sold || 0,
         total_tickets: event.total_tickets || 0,
         revenue: eventTx.revenue,
@@ -93,7 +63,7 @@ export const getAdminEvents = async (req, res) => {
       };
     });
 
-    console.log(`✅ Fetched ${enriched.length} events with enriched data`);
+    console.log(`✅ Enriched ${enriched.length} events with revenue data`);
 
     return res.status(200).json({
       success: true,
