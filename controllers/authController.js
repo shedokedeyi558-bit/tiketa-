@@ -43,35 +43,54 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
 
     console.log('✅ Auth user created:', authData.user.id);
 
-    // ✅ CRITICAL: Create user profile using service role (bypasses RLS)
-    // This ensures the profile is created even if triggers don't fire
-    console.log('📝 Creating user profile with service role...');
-    const { data: userProfile, error: profileError } = await supabaseAdmin
-      .from('users')
-      .upsert(
-        {
-          id: authData.user.id,
-          email,
-          role,  // ✅ Set role explicitly
-          full_name: fullName || '',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'id' }
-      )
+    // ✅ CRITICAL: Write to profiles table using service role
+    console.log('📝 Creating profile record...');
+    const { data: profileData, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .upsert({
+        id: authData.user.id,
+        email,
+        name: fullName || '',
+        role,
+      }, { onConflict: 'id' })
       .select()
       .single();
 
     if (profileError) {
-      console.error('❌ User profile creation failed:', {
+      console.error('❌ Profile creation failed:', {
         error: profileError.message,
         code: profileError.code,
-        details: profileError.details,
       });
-      return errorResponse(res, profileError, 'Failed to create user profile', 400);
+      return errorResponse(res, profileError, 'Failed to create profile', 400);
     }
 
-    console.log('✅ User profile created/updated:', userProfile.id);
+    console.log('✅ Profile record created:', profileData.id);
+
+    // ✅ CRITICAL: Also write to users table using service role
+    // This ensures all backend queries that use the users table will find the data
+    console.log('📝 Creating user record...');
+    const { data: userProfile, error: userError } = await supabaseAdmin
+      .from('users')
+      .upsert({
+        id: authData.user.id,
+        email,
+        full_name: fullName || '',
+        role,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id' })
+      .select()
+      .single();
+
+    if (userError) {
+      console.error('❌ User record creation failed:', {
+        error: userError.message,
+        code: userError.code,
+      });
+      return errorResponse(res, userError, 'Failed to create user record', 400);
+    }
+
+    console.log('✅ User record created:', userProfile.id);
 
     // ✅ Auto-create wallet for organizers
     if (role === 'organizer') {
