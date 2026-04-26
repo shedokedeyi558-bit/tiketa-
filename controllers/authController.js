@@ -6,54 +6,93 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
   try {
     const { email, password, fullName, role } = req.body;
 
-    // Validate role
+    // ✅ Validate role
     if (!['admin', 'organizer'].includes(role)) {
-      return res.status(400).json({ error: 'Invalid role' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'Invalid role',
+        message: 'Role must be either "admin" or "organizer"'
+      });
     }
 
-    // Sign up with Supabase Auth
+    console.log('📝 Starting signup for:', { email, role });
+
+    // ✅ Sign up with Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        data: {
+          full_name: fullName,
+          role: role,
+        }
+      }
     });
 
     if (authError) {
+      console.error('❌ Auth signup failed:', authError);
       return errorResponse(res, authError, 'Signup failed', 400);
     }
 
-    // Create user profile
-    const { error: profileError } = await supabase
+    console.log('✅ Auth user created:', authData.user.id);
+
+    // ✅ CRITICAL: Create user profile with role
+    // The database trigger will auto-create this, but we do it explicitly to ensure it happens
+    console.log('📝 Creating user profile...');
+    const { data: userProfile, error: profileError } = await supabase
       .from('users')
       .insert([
         {
           id: authData.user.id,
           email,
-          role,
-          full_name: fullName,
+          role,  // ✅ Set role explicitly
+          full_name: fullName || '',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         },
-      ]);
+      ])
+      .select()
+      .single();
 
     if (profileError) {
-      return errorResponse(res, profileError, 'Failed to create user profile', 400);
+      // If profile already exists (from trigger), that's OK
+      if (profileError.code === '23505') {
+        console.log('ℹ️ User profile already exists (created by trigger)');
+      } else {
+        console.error('❌ User profile creation failed:', profileError);
+        return errorResponse(res, profileError, 'Failed to create user profile', 400);
+      }
+    } else {
+      console.log('✅ User profile created:', userProfile.id);
     }
 
-    // 🔑 Auto-create wallet for organizers
+    // ✅ Auto-create wallet for organizers
     if (role === 'organizer') {
       console.log(`⏳ Creating wallet for new organizer: ${authData.user.id}`);
-      const walletResult = await createOrganizerWallet(authData.user.id);
       
-      if (!walletResult.success) {
-        console.error('⚠️ Failed to create organizer wallet:', walletResult.error);
-        // Don't fail signup if wallet creation fails - it can be created later
-      } else {
-        console.log(`✅ Wallet created for organizer: ${authData.user.id}`);
+      try {
+        const walletResult = await createOrganizerWallet(authData.user.id);
+        
+        if (!walletResult.success) {
+          console.error('⚠️ Failed to create organizer wallet:', walletResult.error);
+          // Don't fail signup if wallet creation fails - it can be created later
+        } else {
+          console.log(`✅ Wallet created for organizer: ${authData.user.id}`);
+        }
+      } catch (walletError) {
+        console.error('⚠️ Wallet creation error:', walletError);
+        // Don't fail signup if wallet creation fails
       }
     }
 
+    console.log('✅ Signup completed successfully');
+
     return createdResponse(res, {
       user: authData.user,
+      role: role,
     }, 'Signup successful');
   } catch (error) {
+    console.error('❌ Signup error:', error);
     return errorResponse(res, error, 'Signup failed', 500);
   }
 };
