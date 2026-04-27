@@ -610,7 +610,7 @@ export const getEventStats = async (req, res) => {
     if (allTransactions && allTransactions.length > 0) {
       console.log('📋 Transaction details:');
       allTransactions.forEach((tx, idx) => {
-        console.log(`  [${idx}] ID: ${tx.id}, Status: ${tx.status}, Amount: ${tx.amount}, Organizer Earnings: ${tx.organizer_earnings}`);
+        console.log(`  [${idx}] ID: ${tx.id}, Status: ${tx.status}, Ticket Price: ${tx.ticket_price}, Platform Commission: ${tx.platform_commission}, Organizer Earnings: ${tx.organizer_earnings}`);
       });
     }
 
@@ -618,18 +618,25 @@ export const getEventStats = async (req, res) => {
     const successfulTransactions = allTransactions?.filter(t => t.status === 'success') ?? [];
     console.log('✅ Successful transactions:', successfulTransactions.length);
 
-    // Calculate stats
-    const totalRevenue = successfulTransactions.reduce((sum, t) => sum + Number(t.amount || 0), 0);
-    const totalOrganizerEarnings = successfulTransactions.reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0);
-    const totalPlatformCommission = successfulTransactions.reduce((sum, t) => {
-      const commission = Number(t.amount || 0) - Number(t.organizer_earnings || 0);
-      return sum + commission;
-    }, 0);
+    // ✅ Calculate stats with correct business logic
+    // Gross Revenue = sum of ticket_price (NOT total_amount which includes ₦100 buyer fee)
+    const grossRevenue = successfulTransactions.reduce((sum, t) => sum + Number(t.ticket_price || 0), 0);
+    
+    // Platform Fee = sum of platform_commission (already calculated as 3% of ticket_price in DB)
+    const platformFee = successfulTransactions.reduce((sum, t) => sum + Number(t.platform_commission || 0), 0);
+    
+    // Net Earnings = Gross Revenue - Platform Fee (should match sum of organizer_earnings)
+    const netEarnings = grossRevenue - platformFee;
+    
+    // Verify against stored organizer_earnings
+    const storedOrganizerEarnings = successfulTransactions.reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0);
 
     console.log('💰 Revenue breakdown:', {
-      totalRevenue,
-      totalOrganizerEarnings,
-      totalPlatformCommission,
+      grossRevenue,
+      platformFee,
+      netEarnings,
+      storedOrganizerEarnings,
+      match: Math.abs(netEarnings - storedOrganizerEarnings) < 0.01, // Allow for rounding
     });
 
     // Get tickets for this event
@@ -664,18 +671,14 @@ export const getEventStats = async (req, res) => {
         failed: allTransactions?.filter(t => t.status === 'failed').length ?? 0,
       },
       revenue: {
-        total: totalRevenue,
-        organizer_earnings: totalOrganizerEarnings,
-        platform_commission: totalPlatformCommission,
+        gross_revenue: grossRevenue, // ✅ Sum of ticket_price only
+        platform_fee: platformFee, // ✅ Sum of platform_commission (3% of ticket_price)
+        net_earnings: netEarnings, // ✅ Gross Revenue - Platform Fee
+        organizer_earnings: storedOrganizerEarnings, // For verification
       },
       tickets: {
         count: tickets?.length ?? 0,
         total_quantity: tickets?.reduce((sum, t) => sum + Number(t.quantity || 0), 0) ?? 0,
-      },
-      debug: {
-        event_id_queried: id,
-        transactions_raw: allTransactions,
-        tickets_raw: tickets,
       },
     };
 
