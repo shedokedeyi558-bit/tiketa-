@@ -545,7 +545,7 @@ export const getRevenueAnalytics = async (req, res) => {
     // Fetch all successful transactions with all needed fields
     const { data: transactions, error: txError } = await supabase
       .from('transactions')
-      .select('total_amount, ticket_price, processing_fee, platform_commission, organizer_earnings, created_at, event_id')
+      .select('event_id, ticket_price, platform_commission, organizer_earnings, total_amount, processing_fee, created_at')
       .eq('status', 'success')
       .order('created_at', { ascending: true });
 
@@ -555,60 +555,55 @@ export const getRevenueAnalytics = async (req, res) => {
     }
 
     console.log(`✅ Fetched ${transactions?.length || 0} successful transactions`);
-
-    // ✅ Calculate summary stats with correct business logic
-    const SQUADCO_FEE_PERCENTAGE = 1.2; // 1.2% payment gateway fee
     
-    const grossRevenue = (transactions || []).reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
-    const squadcoFees = grossRevenue * (SQUADCO_FEE_PERCENTAGE / 100);
-    const netReceived = grossRevenue - squadcoFees;
+    // ✅ Log raw transaction data for debugging
+    if (transactions && transactions.length > 0) {
+      console.log('📊 Sample transaction:', transactions[0]);
+      console.log('📊 All transactions:', JSON.stringify(transactions, null, 2));
+    } else {
+      console.warn('⚠️ No successful transactions found!');
+    }
+
+    // ✅ Calculate summary stats - simplified and correct
+    const totalRevenue = (transactions || []).reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
     const totalCommission = (transactions || []).reduce((sum, t) => sum + Number(t.platform_commission || 0), 0);
     const totalOrganizerEarnings = (transactions || []).reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0);
+    const totalTransactions = transactions?.length || 0;
+    
+    // Additional calculations
+    const SQUADCO_FEE_PERCENTAGE = 1.2;
+    const squadcoFees = totalRevenue * (SQUADCO_FEE_PERCENTAGE / 100);
+    const netReceived = totalRevenue - squadcoFees;
     const buyerFeesCollected = (transactions || []).reduce((sum, t) => sum + Number(t.processing_fee || 0), 0);
     const platformNetProfit = totalCommission + buyerFeesCollected - squadcoFees;
-    const totalTransactions = transactions?.length || 0;
 
     console.log('✅ Summary stats calculated:', {
-      grossRevenue,
-      squadcoFees,
-      netReceived,
+      totalRevenue,
       totalCommission,
       totalOrganizerEarnings,
+      totalTransactions,
+      squadcoFees,
+      netReceived,
       buyerFeesCollected,
       platformNetProfit,
-      totalTransactions,
     });
 
     // Group by month for chart data
     const monthlyData = {};
     (transactions || []).forEach(t => {
       const d = new Date(t.created_at);
-      // Use UTC to avoid timezone issues
       const month = d.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
       if (!monthlyData[month]) {
         monthlyData[month] = { 
-          grossRevenue: 0, 
-          squadcoFees: 0,
-          netReceived: 0,
-          platformCommission: 0, 
+          revenue: 0, 
+          commission: 0, 
           organizerEarnings: 0,
-          buyerFees: 0,
-          platformNetProfit: 0,
           count: 0 
         };
       }
-      const totalAmount = Number(t.total_amount || 0);
-      const squadcoFee = totalAmount * (SQUADCO_FEE_PERCENTAGE / 100);
-      const processingFee = Number(t.processing_fee || 0);
-      const commission = Number(t.platform_commission || 0);
-      
-      monthlyData[month].grossRevenue += totalAmount;
-      monthlyData[month].squadcoFees += squadcoFee;
-      monthlyData[month].netReceived += (totalAmount - squadcoFee);
-      monthlyData[month].platformCommission += commission;
+      monthlyData[month].revenue += Number(t.total_amount || 0);
+      monthlyData[month].commission += Number(t.platform_commission || 0);
       monthlyData[month].organizerEarnings += Number(t.organizer_earnings || 0);
-      monthlyData[month].buyerFees += processingFee;
-      monthlyData[month].platformNetProfit += (commission + processingFee - squadcoFee);
       monthlyData[month].count += 1;
     });
 
@@ -662,19 +657,21 @@ export const getRevenueAnalytics = async (req, res) => {
       .sort((a, b) => b.grossRevenue - a.grossRevenue);
 
     console.log(`✅ Revenue by event calculated for ${revenueByEvent.length} events`);
+    console.log('📊 Revenue by event data:', JSON.stringify(revenueByEvent, null, 2));
 
     return res.status(200).json({
       success: true,
       data: {
         summary: {
-          grossRevenue,
-          squadcoFees,
-          netReceived,
+          totalRevenue,
           totalCommission,
           totalOrganizerEarnings,
+          totalTransactions,
+          grossRevenue: totalRevenue,
+          squadcoFees,
+          netReceived,
           buyerFeesCollected,
           platformNetProfit,
-          totalTransactions,
         },
         monthlyData: monthlyChartData,
         revenueByEvent,
