@@ -18,6 +18,36 @@ export const getAdminEvents = async (req, res) => {
 
     console.log(`✅ Fetched ${events?.length || 0} events with organizer info`);
 
+    // ✅ Auto-expire past events - update status in database
+    const now = new Date();
+    const pastActiveEvents = (events || []).filter(event => {
+      const eventDate = new Date(event.date);
+      return eventDate < now && event.status === 'active';
+    });
+
+    if (pastActiveEvents.length > 0) {
+      console.log(`⏰ Found ${pastActiveEvents.length} past active events to expire`);
+      
+      // Update all past active events to 'ended' status
+      const pastEventIds = pastActiveEvents.map(e => e.id);
+      const { error: updateError } = await supabase
+        .from('events')
+        .update({ status: 'ended' })
+        .in('id', pastEventIds);
+
+      if (updateError) {
+        console.error('⚠️ Failed to update past events:', updateError);
+      } else {
+        console.log(`✅ Updated ${pastActiveEvents.length} events to 'ended' status`);
+        // Update the local events array to reflect the change
+        events.forEach(event => {
+          if (pastEventIds.includes(event.id)) {
+            event.status = 'ended';
+          }
+        });
+      }
+    }
+
     // Fetch all successful transactions for revenue calculation
     const { data: transactions, error: txError } = await supabase
       .from('transactions')
@@ -42,8 +72,6 @@ export const getAdminEvents = async (req, res) => {
     const enriched = (events || []).map((event) => {
       const eventTx = txMap[event.id] || { revenue: 0, organizer_earnings: 0 };
       
-      // ✅ Use database status directly - no date-based calculation
-      // This ensures consistency with organizer dashboard
       return {
         id: event.id,
         title: event.title,
@@ -52,7 +80,7 @@ export const getAdminEvents = async (req, res) => {
         organizer_email: event.users?.email || '',
         date: event.date,
         location: event.location,
-        status: event.status, // ✅ Use database status directly
+        status: event.status, // ✅ Now includes auto-expired events
         status_badge: event.status.charAt(0).toUpperCase() + event.status.slice(1), // Capitalize first letter
         tickets_sold: event.tickets_sold || 0,
         total_tickets: event.total_tickets || 0,
@@ -369,10 +397,12 @@ export const getDashboardStats = async (req, res) => {
     // Query 4: Active events (with error handling)
     try {
       console.log('⏳ Querying active events from events table...');
+      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
       const activeEventsResult = await supabase
         .from('events')
         .select('id', { count: 'exact', head: true })
-        .eq('status', 'active');
+        .eq('status', 'active')
+        .gte('date', today); // ✅ Only count events with future dates
       
       if (activeEventsResult.error) {
         console.error('❌ Active events query error:', {
