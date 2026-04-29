@@ -99,15 +99,26 @@ export const initiatePayment = async (req, res) => {
     
     console.log('🔑 GENERATED REFERENCE:', reference);
 
-    // Calculate total ticket price natively from cart
-    const baseTicketPrice = cartItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-    const totalAmount = baseTicketPrice + PROCESSING_FEE;
+    // ✅ Calculate fees according to exact business logic
+    const ticketPrice = cartItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    const processingFee = PROCESSING_FEE; // ₦100 flat (paid by attendee, goes to platform)
+    const totalAmount = ticketPrice + processingFee; // What attendee actually pays
+    
+    const squadcoFee = (totalAmount * 1.2) / 100; // 1.2% of total_amount (deducted by Squadco)
+    const platformCommission = (ticketPrice * PLATFORM_COMMISSION_PERCENTAGE) / 100; // 3% of ticket_price ONLY
+    const organizerEarnings = ticketPrice - platformCommission; // ticket_price - platform_commission
+    const platformNetProfit = processingFee - squadcoFee + platformCommission; // processing_fee - squadco_fee + platform_commission
 
-    // Calculate fees
-    const platformCommission = (baseTicketPrice * PLATFORM_COMMISSION_PERCENTAGE) / 100;
-    const organizerEarnings = baseTicketPrice - platformCommission;
-
-    console.log('📋 Transaction details:', { reference, totalAmount, platformCommission, organizerEarnings });
+    console.log('📋 Transaction fee breakdown:', {
+      reference,
+      ticketPrice,
+      processingFee,
+      totalAmount,
+      squadcoFee: squadcoFee.toFixed(2),
+      platformCommission: platformCommission.toFixed(2),
+      organizerEarnings: organizerEarnings.toFixed(2),
+      platformNetProfit: platformNetProfit.toFixed(2),
+    });
 
     // Create pending transaction record
     console.log('Creating transaction record...');
@@ -120,8 +131,8 @@ export const initiatePayment = async (req, res) => {
           organizer_id: event.organizer_id,
           buyer_email: buyerEmail,
           buyer_name: buyerName,
-          ticket_price: baseTicketPrice,
-          processing_fee: PROCESSING_FEE,
+          ticket_price: ticketPrice,
+          processing_fee: processingFee,
           total_amount: totalAmount,
           platform_commission: platformCommission,
           organizer_earnings: organizerEarnings,
