@@ -8,6 +8,7 @@ import {
   getAdminOrders,
   getDashboardStats,
   getRevenueAnalytics,
+  getAdminOrganizers,
 } from '../controllers/adminController.js';
 import {
   getWithdrawalsController,
@@ -31,6 +32,9 @@ router.delete('/events/:id', deleteAdminEvent);
 
 // Orders management
 router.get('/orders', getAdminOrders);
+
+// Organizers management
+router.get('/organizers', getAdminOrganizers);
 
 // Dashboard stats
 router.get('/stats', getDashboardStats);

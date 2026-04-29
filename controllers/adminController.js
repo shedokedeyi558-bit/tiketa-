@@ -536,6 +536,133 @@ export const getAdminUsers = async (req, res) => {
   }
 };
 
+// Get all organizers with detailed stats
+export const getAdminOrganizers = async (req, res) => {
+  try {
+    console.log('👥 Fetching all organizers with stats...');
+
+    // Fetch all organizers
+    const { data: organizers, error: orgError } = await supabase
+      .from('users')
+      .select('id, full_name, email, created_at, role')
+      .eq('role', 'organizer')
+      .order('created_at', { ascending: false });
+
+    if (orgError) {
+      console.error('❌ Failed to fetch organizers:', orgError);
+      throw orgError;
+    }
+
+    console.log(`✅ Fetched ${organizers?.length || 0} organizers`);
+
+    // Fetch wallets for all organizers
+    const organizerIds = organizers.map(o => o.id);
+    const { data: wallets, error: walletError } = await supabase
+      .from('organizer_wallets')
+      .select('organizer_id, available_balance, total_earned')
+      .in('organizer_id', organizerIds);
+
+    if (walletError) {
+      console.warn('⚠️ Failed to fetch wallets:', walletError);
+    }
+
+    const walletMap = (wallets || []).reduce((acc, w) => {
+      acc[w.organizer_id] = w;
+      return acc;
+    }, {});
+
+    // Fetch successful transactions for each organizer
+    const { data: transactions, error: txError } = await supabase
+      .from('transactions')
+      .select('organizer_id, created_at')
+      .eq('status', 'success')
+      .in('organizer_id', organizerIds);
+
+    if (txError) {
+      console.warn('⚠️ Failed to fetch transactions:', txError);
+    }
+
+    const txMap = {};
+    (transactions || []).forEach(tx => {
+      if (!txMap[tx.organizer_id]) {
+        txMap[tx.organizer_id] = { count: 0, lastDate: null };
+      }
+      txMap[tx.organizer_id].count += 1;
+      const txDate = new Date(tx.created_at);
+      if (!txMap[tx.organizer_id].lastDate || txDate > txMap[tx.organizer_id].lastDate) {
+        txMap[tx.organizer_id].lastDate = txDate;
+      }
+    });
+
+    // Fetch events for each organizer
+    const { data: events, error: eventsError } = await supabase
+      .from('events')
+      .select('organizer_id, created_at')
+      .in('organizer_id', organizerIds);
+
+    if (eventsError) {
+      console.warn('⚠️ Failed to fetch events:', eventsError);
+    }
+
+    const eventsMap = {};
+    (events || []).forEach(event => {
+      if (!eventsMap[event.organizer_id]) {
+        eventsMap[event.organizer_id] = { count: 0, lastDate: null };
+      }
+      eventsMap[event.organizer_id].count += 1;
+      const eventDate = new Date(event.created_at);
+      if (!eventsMap[event.organizer_id].lastDate || eventDate > eventsMap[event.organizer_id].lastDate) {
+        eventsMap[event.organizer_id].lastDate = eventDate;
+      }
+    });
+
+    // Build enriched organizer data
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const enrichedOrganizers = organizers.map(org => {
+      const wallet = walletMap[org.id] || { available_balance: 0, total_earned: 0 };
+      const txData = txMap[org.id] || { count: 0, lastDate: null };
+      const eventData = eventsMap[org.id] || { count: 0, lastDate: null };
+
+      // Determine last activity date
+      const lastActivityDate = [txData.lastDate, eventData.lastDate]
+        .filter(Boolean)
+        .sort((a, b) => b - a)[0] || null;
+
+      // Determine if active (activity in last 30 days)
+      const isActive = lastActivityDate && lastActivityDate > thirtyDaysAgo;
+
+      return {
+        id: org.id,
+        full_name: org.full_name,
+        email: org.email,
+        date_joined: org.created_at,
+        available_balance: Number(wallet.available_balance || 0),
+        total_earned: Number(wallet.total_earned || 0),
+        total_tickets_sold: txData.count,
+        total_events_created: eventData.count,
+        last_activity_date: lastActivityDate ? lastActivityDate.toISOString() : null,
+        status: isActive ? 'active' : 'inactive',
+      };
+    });
+
+    console.log(`✅ Enriched ${enrichedOrganizers.length} organizers with stats`);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Organizers fetched successfully',
+      data: enrichedOrganizers,
+    });
+  } catch (error) {
+    console.error('❌ Error fetching organizers:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 
 // Get revenue analytics
 export const getRevenueAnalytics = async (req, res) => {
@@ -545,7 +672,7 @@ export const getRevenueAnalytics = async (req, res) => {
     // Fetch all successful transactions with all needed fields
     const { data: transactions, error: txError } = await supabase
       .from('transactions')
-      .select('event_id, ticket_price, platform_commission, organizer_earnings, total_amount, processing_fee, created_at')
+      .select('event_id, organizer_id, ticket_price, platform_commission, organizer_earnings, total_amount, processing_fee, created_at')
       .eq('status', 'success')
       .order('created_at', { ascending: true });
 
@@ -659,6 +786,51 @@ export const getRevenueAnalytics = async (req, res) => {
     console.log(`✅ Revenue by event calculated for ${revenueByEvent.length} events`);
     console.log('📊 Revenue by event data:', JSON.stringify(revenueByEvent, null, 2));
 
+    // ✅ Commission breakdown per organizer
+    const organizerIds = [...new Set((transactions || []).map(t => t.organizer_id).filter(Boolean))];
+    console.log(`✅ Found ${organizerIds.length} unique organizers`);
+
+    let organizerMap = {};
+    if (organizerIds.length > 0) {
+      const { data: organizers, error: orgError } = await supabase
+        .from('users')
+        .select('id, full_name, email')
+        .in('id', organizerIds);
+
+      if (orgError) {
+        console.error('⚠️ Failed to fetch organizer names:', orgError);
+      } else {
+        organizerMap = (organizers || []).reduce((acc, org) => {
+          acc[org.id] = org;
+          return acc;
+        }, {});
+      }
+    }
+
+    const commissionByOrganizer = organizerIds
+      .map(id => {
+        const organizerTxns = (transactions || []).filter(t => t.organizer_id === id);
+        const ticketsSold = organizerTxns.length;
+        const grossRevenue = organizerTxns.reduce((sum, t) => sum + Number(t.ticket_price || 0), 0); // ✅ ticket_price only, not total_amount
+        const platformCommission = organizerTxns.reduce((sum, t) => sum + Number(t.platform_commission || 0), 0); // ✅ 3% of ticket_price
+        const organizerEarnings = organizerTxns.reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0);
+        
+        const organizer = organizerMap[id];
+        return {
+          organizer_id: id,
+          organizer_name: organizer?.full_name || 'Unknown',
+          organizer_email: organizer?.email || '',
+          tickets_sold: ticketsSold,
+          gross_revenue: grossRevenue,
+          platform_commission: platformCommission,
+          organizer_earnings: organizerEarnings,
+        };
+      })
+      .sort((a, b) => b.gross_revenue - a.gross_revenue);
+
+    console.log(`✅ Commission by organizer calculated for ${commissionByOrganizer.length} organizers`);
+    console.log('📊 Commission by organizer data:', JSON.stringify(commissionByOrganizer, null, 2));
+
     return res.status(200).json({
       success: true,
       data: {
@@ -675,6 +847,7 @@ export const getRevenueAnalytics = async (req, res) => {
         },
         monthlyData: monthlyChartData,
         revenueByEvent,
+        commissionByOrganizer, // ✅ New: Commission breakdown per organizer
       },
     });
   } catch (error) {
