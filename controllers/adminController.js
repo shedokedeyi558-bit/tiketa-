@@ -107,6 +107,191 @@ export const getAdminEvents = async (req, res) => {
   }
 };
 
+// Get pending events (awaiting approval)
+export const getPendingEvents = async (req, res) => {
+  try {
+    console.log('⏳ Fetching pending events...');
+
+    const { data: events, error: eventsError } = await supabase
+      .from('events')
+      .select('*, users:organizer_id(full_name, email)')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+
+    if (eventsError) {
+      console.error('❌ Failed to fetch pending events:', eventsError);
+      throw eventsError;
+    }
+
+    console.log(`✅ Fetched ${events?.length || 0} pending events`);
+
+    const enriched = (events || []).map((event) => ({
+      id: event.id,
+      title: event.title,
+      description: event.description,
+      organizer_id: event.organizer_id,
+      organizer_name: event.users?.full_name || 'Unknown',
+      organizer_email: event.users?.email || '',
+      date: event.date,
+      end_date: event.end_date,
+      location: event.location,
+      status: event.status,
+      category: event.category,
+      image_url: event.image_url,
+      total_tickets: event.total_tickets || 0,
+      created_at: event.created_at,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      message: 'Pending events fetched successfully',
+      data: enriched,
+    });
+  } catch (error) {
+    console.error('❌ Error fetching pending events:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// Approve event
+export const approveEvent = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    console.log(`✅ Approving event ${id}...`);
+
+    // Get event details before updating
+    const { data: event, error: fetchError } = await supabase
+      .from('events')
+      .select('*, users:organizer_id(full_name, email)')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !event) {
+      console.error('❌ Event not found:', fetchError);
+      return res.status(404).json({
+        success: false,
+        message: 'Event not found',
+      });
+    }
+
+    // Update event status to active
+    const { data: updatedEvent, error: updateError } = await supabase
+      .from('events')
+      .update({ status: 'active', updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error('❌ Failed to approve event:', updateError);
+      throw updateError;
+    }
+
+    console.log(`✅ Event ${id} approved successfully`);
+
+    // Send email notification to organizer
+    try {
+      const { sendEventApprovedEmail } = await import('../services/emailService.js');
+      await sendEventApprovedEmail(
+        event.users?.email || '',
+        event.users?.full_name || 'Organizer',
+        event.title
+      );
+      console.log('✅ Approval email sent to organizer');
+    } catch (emailError) {
+      console.error('⚠️ Failed to send approval email:', emailError);
+      // Don't fail the approval if email fails
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Event approved successfully',
+      data: updatedEvent,
+    });
+  } catch (error) {
+    console.error('❌ Error approving event:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// Reject event
+export const rejectEvent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rejection_reason } = req.body;
+
+    console.log(`❌ Rejecting event ${id}...`);
+
+    // Get event details before updating
+    const { data: event, error: fetchError } = await supabase
+      .from('events')
+      .select('*, users:organizer_id(full_name, email)')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !event) {
+      console.error('❌ Event not found:', fetchError);
+      return res.status(404).json({
+        success: false,
+        message: 'Event not found',
+      });
+    }
+
+    // Update event status to rejected
+    const { data: updatedEvent, error: updateError } = await supabase
+      .from('events')
+      .update({ 
+        status: 'rejected',
+        rejection_reason: rejection_reason || 'No reason provided',
+        updated_at: new Date().toISOString() 
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error('❌ Failed to reject event:', updateError);
+      throw updateError;
+    }
+
+    console.log(`✅ Event ${id} rejected successfully`);
+
+    // Send email notification to organizer
+    try {
+      const { sendEventRejectedEmail } = await import('../services/emailService.js');
+      await sendEventRejectedEmail(
+        event.users?.email || '',
+        event.users?.full_name || 'Organizer',
+        event.title,
+        rejection_reason || 'No reason provided'
+      );
+      console.log('✅ Rejection email sent to organizer');
+    } catch (emailError) {
+      console.error('⚠️ Failed to send rejection email:', emailError);
+      // Don't fail the rejection if email fails
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Event rejected successfully',
+      data: updatedEvent,
+    });
+  } catch (error) {
+    console.error('❌ Error rejecting event:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 // Create event
 export const createAdminEvent = async (req, res) => {
   try {

@@ -224,3 +224,94 @@ export const testEmailConfiguration = async () => {
     return { success: false, error: error.message };
   }
 };
+
+/**
+ * Send event approved email to organizer
+ */
+export const sendEventApprovedEmail = async (organizerEmail, organizerName, eventTitle) => {
+  try {
+    console.log('📧 Sending event approved email to:', organizerEmail);
+
+    const emailContent = `
+      <h2>Event Approved! 🎉</h2>
+      <p>Hi ${organizerName},</p>
+      
+      <p>Great news! Your event <strong>${eventTitle}</strong> has been approved and is now live on Ticketa.</p>
+      
+      <h3>What's Next?</h3>
+      <ul>
+        <li>Your event is now visible to the public</li>
+        <li>Attendees can start purchasing tickets</li>
+        <li>You'll receive notifications for each ticket sale</li>
+        <li>Track your sales in real-time from your dashboard</li>
+      </ul>
+      
+      <p>Log in to your dashboard to manage your event and view ticket sales.</p>
+      
+      <p>Best regards,<br/>Ticketa Team</p>
+    `;
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: organizerEmail,
+      subject: `Event Approved - ${eventTitle}`,
+      html: emailContent,
+    };
+
+    const result = await transporter.sendMail(mailOptions);
+    console.log('✅ Event approved email sent:', result.messageId);
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error('❌ Error sending event approved email:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Send event rejected email to organizer
+ */
+export const sendEventRejectedEmail = async (organizerEmail, organizerName, eventTitle, rejectionReason) => {
+  try {
+    console.log('📧 Sending event rejected email to:', organizerEmail);
+
+    const emailContent = `
+      <h2>Event Submission Update</h2>
+      <p>Hi ${organizerName},</p>
+      
+      <p>Thank you for submitting your event <strong>${eventTitle}</strong> to Ticketa.</p>
+      
+      <p>Unfortunately, we are unable to approve your event at this time.</p>
+      
+      <h3>Reason:</h3>
+      <p style="background-color: #f5f5f5; padding: 15px; border-left: 4px solid #ff6b6b; margin: 20px 0;">
+        ${rejectionReason}
+      </p>
+      
+      <h3>What You Can Do:</h3>
+      <ul>
+        <li>Review the reason for rejection</li>
+        <li>Make necessary changes to your event</li>
+        <li>Submit a new event that meets our guidelines</li>
+        <li>Contact us if you have questions: support@ticketa.com</li>
+      </ul>
+      
+      <p>We appreciate your understanding and look forward to working with you.</p>
+      
+      <p>Best regards,<br/>Ticketa Team</p>
+    `;
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: organizerEmail,
+      subject: `Event Submission Update - ${eventTitle}`,
+      html: emailContent,
+    };
+
+    const result = await transporter.sendMail(mailOptions);
+    console.log('✅ Event rejected email sent:', result.messageId);
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error('❌ Error sending event rejected email:', error);
+    return { success: false, error: error.message };
+  }
+};

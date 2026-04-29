@@ -9,6 +9,9 @@ import {
   getDashboardStats,
   getRevenueAnalytics,
   getAdminOrganizers,
+  getPendingEvents,
+  approveEvent,
+  rejectEvent,
 } from '../controllers/adminController.js';
 import {
   getWithdrawalsController,
@@ -26,7 +29,10 @@ router.use(adminAuth);
 
 // Events management
 router.get('/events', getAdminEvents);
+router.get('/events/pending', getPendingEvents); // ✅ Get pending events
 router.post('/events', createAdminEvent);
+router.post('/events/:id/approve', approveEvent); // ✅ Approve event
+router.post('/events/:id/reject', rejectEvent); // ✅ Reject event
 router.put('/events/:id', updateAdminEvent);
 router.delete('/events/:id', deleteAdminEvent);
 

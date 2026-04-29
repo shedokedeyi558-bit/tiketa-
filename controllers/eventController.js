@@ -117,34 +117,34 @@ export const getOrganizerEvents = async (req, res) => {
 
 /**
  * ✅ PUBLIC EVENTS ENDPOINT
- * Returns all active events (public browse page)
+ * Returns all active events with future dates (public browse page)
  * 
  * Query Parameters:
- * - dateFilter: 'all' | 'upcoming' | 'past' (default: 'all')
+ * - dateFilter: 'all' | 'upcoming' | 'past' (default: 'upcoming')
  * - sortBy: 'date' | 'title' (default: 'date')
  * - sortOrder: 'asc' | 'desc' (default: 'asc')
  * 
- * Note: Always returns only 'active' status events
+ * Note: Always returns only 'active' status events, defaults to upcoming only
  */
 export const getAllEvents = async (req, res) => {
   try {
     console.log('📖 Fetching all public events');
 
-    // ✅ Parse query parameters
-    const dateFilter = req.query.dateFilter || 'all'; // 'all', 'upcoming', 'past'
+    // ✅ Parse query parameters - default to upcoming events only
+    const dateFilter = req.query.dateFilter || 'upcoming'; // 'all', 'upcoming', 'past' - default upcoming
     const sortBy = req.query.sortBy || 'date'; // 'date', 'title'
     const sortOrder = req.query.sortOrder === 'desc' ? false : true; // true = asc, false = desc
 
-    // ✅ Build query - always filter by active status
+    // ✅ Build query - always filter by active status AND future dates by default
     let query = supabase
       .from('events')
       .select('*')
       .eq('status', 'active');
 
-    // ✅ Apply date filter
+    // ✅ Apply date filter - default to upcoming (future dates only)
     const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
     if (dateFilter === 'upcoming') {
-      query = query.gte('date', today);
+      query = query.gte('date', today); // ✅ Only future events
     } else if (dateFilter === 'past') {
       query = query.lt('date', today);
     }
@@ -450,7 +450,7 @@ export const createEvent = async (req, res) => {
       console.log('✅ Organizer wallet verified');
     }
 
-    // ✅ Create event with validated organizer_id
+    // ✅ Create event with validated organizer_id - status set to 'pending' for admin approval
     console.log('📝 Inserting event into database...');
     const { data: event, error: eventError } = await supabase
       .from('events')
@@ -464,7 +464,7 @@ export const createEvent = async (req, res) => {
           organizer_id: organizerId, // ✅ Use authenticated user's ID
           total_tickets: total_tickets || 0,
           tickets_sold: 0,
-          status: 'active',
+          status: 'pending', // ✅ Set to pending - requires admin approval
           category: category || 'General',
           image_url: image_url || null,
           created_at: new Date().toISOString(),
