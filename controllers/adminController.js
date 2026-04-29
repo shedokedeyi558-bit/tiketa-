@@ -558,11 +558,11 @@ export const getDashboardStats = async (req, res) => {
         const successTransactions = transactionsResult.data.filter(t => t.status === 'success') || [];
         const pendingTransactions = transactionsResult.data.filter(t => t.status === 'pending') || [];
 
-        stats.totalOrders = transactionsResult.data.length || 0;
-        stats.successfulPayments = successTransactions.length || 0;
-        stats.pendingPayments = pendingTransactions.length || 0;
-        stats.totalRevenue = successTransactions.reduce((sum, t) => sum + Number(t.total_amount || 0), 0) || 0;
-        stats.platformCommission = successTransactions.reduce((sum, t) => sum + Number(t.platform_commission || 0), 0) || 0;
+        stats.totalOrders = Number(transactionsResult.data.length || 0);
+        stats.successfulPayments = Number(successTransactions.length || 0);
+        stats.pendingPayments = Number(pendingTransactions.length || 0); // ✅ Ensure it's always a number
+        stats.totalRevenue = Number(successTransactions.reduce((sum, t) => sum + Number(t.total_amount || 0), 0) || 0);
+        stats.platformCommission = Number(successTransactions.reduce((sum, t) => sum + Number(t.platform_commission || 0), 0) || 0);
 
         console.log('✅ Transactions stats:', {
           total: stats.totalOrders,
@@ -867,17 +867,23 @@ export const getRevenueAnalytics = async (req, res) => {
     }
 
     console.log(`✅ Fetched ${transactions?.length || 0} successful transactions`);
+    console.log('📊 Raw transactions data:', JSON.stringify(transactions, null, 2));
     
     if (transactions && transactions.length > 0) {
       console.log('📊 Sample transaction:', JSON.stringify(transactions[0], null, 2));
       console.log('📊 First 3 transactions:', JSON.stringify(transactions.slice(0, 3), null, 2));
     } else {
       console.warn('⚠️ No successful transactions found!');
-      console.warn('⚠️ Returning empty data - check if there are any successful transactions in the database');
+      console.warn('⚠️ Returning zero data - check if there are any successful transactions in the database');
     }
 
     // ✅ Calculate summary stats according to exact business logic
-    const totalTicketRevenue = (transactions || []).reduce((sum, t) => sum + Number(t.ticket_price || 0), 0);
+    const totalTicketRevenue = (transactions || []).reduce((sum, t) => {
+      const val = Number(t.ticket_price || 0);
+      console.log(`  Adding ticket_price: ${val}`);
+      return sum + val;
+    }, 0);
+    
     const totalProcessingFees = (transactions || []).reduce((sum, t) => sum + Number(t.processing_fee || 0), 0);
     const totalAmountCollected = (transactions || []).reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
     const totalSquadcoCharges = totalAmountCollected * 0.012; // 1.2% of total_amount
@@ -887,13 +893,13 @@ export const getRevenueAnalytics = async (req, res) => {
     const totalTransactions = transactions?.length || 0;
 
     console.log('✅ Summary stats calculated:', {
-      totalTicketRevenue,
-      totalProcessingFees,
-      totalAmountCollected,
-      totalSquadcoCharges: totalSquadcoCharges.toFixed(2),
-      totalPlatformCommission,
-      totalOrganizerEarnings,
-      totalPlatformNetProfit: totalPlatformNetProfit.toFixed(2),
+      totalTicketRevenue: Number(totalTicketRevenue),
+      totalProcessingFees: Number(totalProcessingFees),
+      totalAmountCollected: Number(totalAmountCollected),
+      totalSquadcoCharges: Number(totalSquadcoCharges.toFixed(2)),
+      totalPlatformCommission: Number(totalPlatformCommission),
+      totalOrganizerEarnings: Number(totalOrganizerEarnings),
+      totalPlatformNetProfit: Number(totalPlatformNetProfit.toFixed(2)),
       totalTransactions,
     });
 
