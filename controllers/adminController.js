@@ -869,9 +869,11 @@ export const getRevenueAnalytics = async (req, res) => {
     console.log(`✅ Fetched ${transactions?.length || 0} successful transactions`);
     
     if (transactions && transactions.length > 0) {
-      console.log('📊 Sample transaction:', transactions[0]);
+      console.log('📊 Sample transaction:', JSON.stringify(transactions[0], null, 2));
+      console.log('📊 First 3 transactions:', JSON.stringify(transactions.slice(0, 3), null, 2));
     } else {
       console.warn('⚠️ No successful transactions found!');
+      console.warn('⚠️ Returning empty data - check if there are any successful transactions in the database');
     }
 
     // ✅ Calculate summary stats according to exact business logic
