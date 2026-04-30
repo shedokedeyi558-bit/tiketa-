@@ -724,7 +724,7 @@ export const getAdminUsers = async (req, res) => {
 // Get all organizers with detailed stats - REWRITTEN
 export const getAdminOrganizers = async (req, res) => {
   try {
-    console.log('👥 [REWRITTEN] Fetching ALL organizers from profiles table...');
+    console.log('👥 Fetching ALL organizers from profiles table...');
 
     // ✅ STEP 1: Fetch ALL organizers from profiles table where role = 'organizer'
     console.log('🔍 Querying profiles table for all organizers...');
@@ -750,114 +750,79 @@ export const getAdminOrganizers = async (req, res) => {
       });
     }
 
-    const organizerIds = organizers.map(o => o.id);
-    console.log(`📋 Organizer IDs: ${organizerIds.join(', ')}`);
+    // ✅ STEP 2: For each organizer, fetch their stats
+    console.log('📊 Fetching stats for each organizer...');
+    const result = [];
 
-    // ✅ STEP 2: Fetch events for each organizer (count how many events they created)
-    console.log('🎪 Fetching events for each organizer...');
-    const { data: events, error: eventsError } = await supabase
-      .from('events')
-      .select('id, organizer_id, created_at')
-      .in('organizer_id', organizerIds);
+    for (const org of organizers) {
+      try {
+        // Count events for this organizer
+        const { count: eventCount, error: eventError } = await supabase
+          .from('events')
+          .select('id', { count: 'exact', head: true })
+          .eq('organizer_id', org.id);
 
-    if (eventsError) {
-      console.warn('⚠️ Failed to fetch events:', eventsError);
-    }
+        if (eventError) {
+          console.warn(`⚠️ Failed to count events for organizer ${org.id}:`, eventError);
+        }
 
-    console.log(`✅ Fetched ${events?.length || 0} events`);
+        // Count successful transactions for this organizer
+        const { count: txCount, error: txError } = await supabase
+          .from('transactions')
+          .select('id', { count: 'exact', head: true })
+          .eq('organizer_id', org.id)
+          .eq('status', 'success');
 
-    // Build events map: organizer_id -> { count, lastDate }
-    const eventsMap = {};
-    const eventIds = [];
-    (events || []).forEach(event => {
-      if (!eventsMap[event.organizer_id]) {
-        eventsMap[event.organizer_id] = { count: 0, lastDate: null };
+        if (txError) {
+          console.warn(`⚠️ Failed to count transactions for organizer ${org.id}:`, txError);
+        }
+
+        // Get total earnings for this organizer
+        const { data: earnings, error: earningsError } = await supabase
+          .from('transactions')
+          .select('organizer_earnings')
+          .eq('organizer_id', org.id)
+          .eq('status', 'success');
+
+        if (earningsError) {
+          console.warn(`⚠️ Failed to fetch earnings for organizer ${org.id}:`, earningsError);
+        }
+
+        const totalEarnings = (earnings || []).reduce((sum, tx) => sum + Number(tx.organizer_earnings || 0), 0);
+
+        // Get wallet balance for this organizer
+        const { data: wallet, error: walletError } = await supabase
+          .from('wallets')
+          .select('available_balance')
+          .eq('organizer_id', org.id)
+          .single();
+
+        if (walletError && walletError.code !== 'PGRST116') {
+          console.warn(`⚠️ Failed to fetch wallet for organizer ${org.id}:`, walletError);
+        }
+
+        // Determine display name: use full_name if available, otherwise use email prefix
+        const displayName = org.full_name && org.full_name.trim() 
+          ? org.full_name 
+          : org.email.split('@')[0];
+
+        result.push({
+          id: org.id,
+          name: displayName,
+          email: org.email || '',
+          total_events_created: eventCount || 0,
+          total_tickets_sold: txCount || 0,
+          total_earned: totalEarnings,
+          available_balance: wallet?.available_balance || 0,
+          last_event_date: null, // Can be added if needed
+        });
+
+        console.log(`✅ Fetched stats for organizer ${org.id}: ${eventCount || 0} events, ${txCount || 0} tickets`);
+      } catch (err) {
+        console.error(`❌ Error fetching stats for organizer ${org.id}:`, err);
+        // Continue with next organizer even if one fails
       }
-      eventsMap[event.organizer_id].count += 1;
-      eventIds.push(event.id);
-      
-      const eventDate = new Date(event.created_at);
-      if (!eventsMap[event.organizer_id].lastDate || eventDate > eventsMap[event.organizer_id].lastDate) {
-        eventsMap[event.organizer_id].lastDate = eventDate;
-      }
-    });
-
-    console.log(`📊 Events map: ${Object.keys(eventsMap).length} organizers have events`);
-
-    // ✅ STEP 3: Fetch transactions where status = 'success' to get:
-    // - Total tickets sold (COUNT)
-    // - Total earned (SUM of organizer_earnings)
-    console.log('📈 Fetching successful transactions...');
-    let transactions = [];
-    
-    const { data: txData, error: txError } = await supabase
-      .from('transactions')
-      .select('organizer_id, organizer_earnings, status, created_at')
-      .eq('status', 'success')
-      .in('organizer_id', organizerIds);
-
-    if (txError) {
-      console.warn('⚠️ Failed to fetch transactions:', txError);
-    } else {
-      transactions = txData || [];
-      console.log(`✅ Fetched ${transactions.length} successful transactions`);
     }
-
-    // Build transactions map: organizer_id -> { count, earnings }
-    const txMap = {};
-    (transactions || []).forEach(tx => {
-      if (!txMap[tx.organizer_id]) {
-        txMap[tx.organizer_id] = { count: 0, earnings: 0 };
-      }
-      txMap[tx.organizer_id].count += 1;
-      txMap[tx.organizer_id].earnings += Number(tx.organizer_earnings || 0);
-    });
-
-    console.log(`📊 Transactions map: ${Object.keys(txMap).length} organizers have transactions`);
-
-    // ✅ STEP 4: Fetch wallet balances for each organizer
-    console.log('💰 Fetching wallet balances...');
-    let wallets = [];
-    
-    const { data: walletData, error: walletError } = await supabase
-      .from('wallets')
-      .select('organizer_id, available_balance')
-      .in('organizer_id', organizerIds);
-
-    if (walletError) {
-      console.warn('⚠️ Failed to fetch wallets:', walletError);
-    } else {
-      wallets = walletData || [];
-      console.log(`✅ Fetched ${wallets.length} wallet records`);
-    }
-
-    // Build wallets map: organizer_id -> available_balance
-    const walletMap = {};
-    (wallets || []).forEach(wallet => {
-      walletMap[wallet.organizer_id] = Number(wallet.available_balance || 0);
-    });
-
-    console.log(`📊 Wallets map: ${Object.keys(walletMap).length} organizers have wallets`);
-
-    // ✅ STEP 5: Build response - return ALL organizers even if they have zero events or zero sales
-    console.log('🔨 Building response with all organizers...');
-    
-    const result = organizers.map(org => {
-      const eventData = eventsMap[org.id] || { count: 0, lastDate: null };
-      const txData = txMap[org.id] || { count: 0, earnings: 0 };
-      const balance = walletMap[org.id] || 0;
-
-      return {
-        id: org.id,
-        name: org.full_name || '',
-        email: org.email || '',
-        total_events_created: eventData.count,
-        total_tickets_sold: txData.count,
-        total_earned: Number(txData.earnings || 0),
-        available_balance: balance,
-        last_event_date: eventData.lastDate ? eventData.lastDate.toISOString() : null,
-      };
-    });
 
     console.log(`✅ Built response with ${result.length} organizers`);
     console.log('📊 Sample organizer:', result[0] || 'No organizers');
