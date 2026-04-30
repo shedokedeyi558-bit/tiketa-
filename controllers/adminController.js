@@ -726,7 +726,8 @@ export const getAdminOrganizers = async (req, res) => {
   try {
     console.log('👥 Fetching all organizers with stats...');
 
-    // Fetch all organizers
+    // ✅ STEP 1: Fetch all organizers from users table
+    console.log('🔍 Querying users table for all organizers...');
     const { data: organizers, error: orgError } = await supabase
       .from('users')
       .select('id, full_name, email, created_at, role')
@@ -738,17 +739,49 @@ export const getAdminOrganizers = async (req, res) => {
       throw orgError;
     }
 
-    console.log(`✅ Fetched ${organizers?.length || 0} organizers`);
+    console.log(`✅ Fetched ${organizers?.length || 0} organizers from users table`);
 
-    // Fetch wallets for all organizers
+    if (!organizers || organizers.length === 0) {
+      console.log('⚠️ No organizers found');
+      return res.status(200).json({
+        success: true,
+        message: 'No organizers found',
+        data: [],
+      });
+    }
+
     const organizerIds = organizers.map(o => o.id);
-    const { data: wallets, error: walletError } = await supabase
-      .from('organizer_wallets')
+    console.log(`📋 Organizer IDs: ${organizerIds.join(', ')}`);
+
+    // ✅ STEP 2: Fetch wallets - try both table names for compatibility
+    console.log('💰 Fetching wallets...');
+    let wallets = [];
+    let walletError = null;
+
+    // Try wallets table first (used by payment controller)
+    const { data: walletsData, error: walletsErr } = await supabase
+      .from('wallets')
       .select('organizer_id, available_balance, total_earned')
       .in('organizer_id', organizerIds);
 
-    if (walletError) {
-      console.warn('⚠️ Failed to fetch wallets:', walletError);
+    if (!walletsErr) {
+      wallets = walletsData || [];
+      console.log(`✅ Fetched ${wallets.length} wallets from 'wallets' table`);
+    } else {
+      console.warn('⚠️ Failed to fetch from wallets table:', walletsErr.message);
+      
+      // Try organizer_wallets table as fallback
+      const { data: orgWalletsData, error: orgWalletsErr } = await supabase
+        .from('organizer_wallets')
+        .select('organizer_id, available_balance, total_earned')
+        .in('organizer_id', organizerIds);
+
+      if (!orgWalletsErr) {
+        wallets = orgWalletsData || [];
+        console.log(`✅ Fetched ${wallets.length} wallets from 'organizer_wallets' table`);
+      } else {
+        console.warn('⚠️ Failed to fetch from organizer_wallets table:', orgWalletsErr.message);
+      }
     }
 
     const walletMap = (wallets || []).reduce((acc, w) => {
@@ -756,10 +789,13 @@ export const getAdminOrganizers = async (req, res) => {
       return acc;
     }, {});
 
-    // Fetch successful transactions for each organizer
+    console.log(`📊 Wallet map created with ${Object.keys(walletMap).length} entries`);
+
+    // ✅ STEP 3: Fetch successful transactions for each organizer
+    console.log('📈 Fetching transactions...');
     const { data: transactions, error: txError } = await supabase
       .from('transactions')
-      .select('organizer_id, created_at')
+      .select('organizer_id, ticket_price, created_at')
       .eq('status', 'success')
       .in('organizer_id', organizerIds);
 
@@ -767,19 +803,28 @@ export const getAdminOrganizers = async (req, res) => {
       console.warn('⚠️ Failed to fetch transactions:', txError);
     }
 
+    console.log(`✅ Fetched ${transactions?.length || 0} successful transactions`);
+
     const txMap = {};
+    let totalTicketsRevenue = 0;
     (transactions || []).forEach(tx => {
       if (!txMap[tx.organizer_id]) {
-        txMap[tx.organizer_id] = { count: 0, lastDate: null };
+        txMap[tx.organizer_id] = { count: 0, revenue: 0, lastDate: null };
       }
       txMap[tx.organizer_id].count += 1;
+      txMap[tx.organizer_id].revenue += Number(tx.ticket_price || 0);
+      totalTicketsRevenue += Number(tx.ticket_price || 0);
+      
       const txDate = new Date(tx.created_at);
       if (!txMap[tx.organizer_id].lastDate || txDate > txMap[tx.organizer_id].lastDate) {
         txMap[tx.organizer_id].lastDate = txDate;
       }
     });
 
-    // Fetch events for each organizer
+    console.log(`📊 Transaction map created with ${Object.keys(txMap).length} organizers having transactions`);
+
+    // ✅ STEP 4: Fetch events for each organizer
+    console.log('🎪 Fetching events...');
     const { data: events, error: eventsError } = await supabase
       .from('events')
       .select('organizer_id, created_at')
@@ -788,6 +833,8 @@ export const getAdminOrganizers = async (req, res) => {
     if (eventsError) {
       console.warn('⚠️ Failed to fetch events:', eventsError);
     }
+
+    console.log(`✅ Fetched ${events?.length || 0} events`);
 
     const eventsMap = {};
     (events || []).forEach(event => {
@@ -801,13 +848,15 @@ export const getAdminOrganizers = async (req, res) => {
       }
     });
 
-    // Build enriched organizer data
+    console.log(`📊 Events map created with ${Object.keys(eventsMap).length} organizers having events`);
+
+    // ✅ STEP 5: Build enriched organizer data
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
     const enrichedOrganizers = organizers.map(org => {
       const wallet = walletMap[org.id] || { available_balance: 0, total_earned: 0 };
-      const txData = txMap[org.id] || { count: 0, lastDate: null };
+      const txData = txMap[org.id] || { count: 0, revenue: 0, lastDate: null };
       const eventData = eventsMap[org.id] || { count: 0, lastDate: null };
 
       // Determine last activity date
@@ -820,12 +869,13 @@ export const getAdminOrganizers = async (req, res) => {
 
       return {
         id: org.id,
-        full_name: org.full_name,
-        email: org.email,
+        full_name: org.full_name || 'Unknown',
+        email: org.email || '',
         date_joined: org.created_at,
         available_balance: Number(wallet.available_balance || 0),
         total_earned: Number(wallet.total_earned || 0),
         total_tickets_sold: txData.count,
+        total_revenue: txData.revenue,
         total_events_created: eventData.count,
         last_activity_date: lastActivityDate ? lastActivityDate.toISOString() : null,
         status: isActive ? 'active' : 'inactive',
@@ -833,17 +883,27 @@ export const getAdminOrganizers = async (req, res) => {
     });
 
     console.log(`✅ Enriched ${enrichedOrganizers.length} organizers with stats`);
+    console.log('📊 Sample organizer:', enrichedOrganizers[0] || 'No organizers');
 
     return res.status(200).json({
       success: true,
       message: 'Organizers fetched successfully',
       data: enrichedOrganizers,
+      meta: {
+        total_organizers: enrichedOrganizers.length,
+        total_tickets_sold: enrichedOrganizers.reduce((sum, o) => sum + o.total_tickets_sold, 0),
+        total_revenue: enrichedOrganizers.reduce((sum, o) => sum + o.total_revenue, 0),
+        total_earned: enrichedOrganizers.reduce((sum, o) => sum + o.total_earned, 0),
+      },
     });
   } catch (error) {
     console.error('❌ Error fetching organizers:', error);
+    console.error('   Error message:', error.message);
+    console.error('   Error code:', error.code);
     return res.status(500).json({
       success: false,
       message: error.message,
+      error: error.code,
     });
   }
 };
