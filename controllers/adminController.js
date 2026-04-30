@@ -726,7 +726,7 @@ export const getAdminOrganizers = async (req, res) => {
   try {
     console.log('👥 Fetching all organizers with stats...');
 
-    // ✅ STEP 1: Fetch all organizers from users table
+    // ✅ STEP 1: Fetch ALL organizers from users table (no filtering)
     console.log('🔍 Querying users table for all organizers...');
     const { data: organizers, error: orgError } = await supabase
       .from('users')
@@ -747,6 +747,12 @@ export const getAdminOrganizers = async (req, res) => {
         success: true,
         message: 'No organizers found',
         data: [],
+        meta: {
+          total_organizers: 0,
+          total_events_created: 0,
+          total_tickets_sold: 0,
+          total_earnings: 0,
+        },
       });
     }
 
@@ -790,7 +796,7 @@ export const getAdminOrganizers = async (req, res) => {
 
     console.log(`📊 Wallet map created with ${Object.keys(walletMap).length} entries`);
 
-    // ✅ STEP 3: Fetch events for each organizer
+    // ✅ STEP 3: Fetch events for each organizer (scoped by organizer_id)
     console.log('🎪 Fetching events...');
     const { data: events, error: eventsError } = await supabase
       .from('events')
@@ -820,8 +826,8 @@ export const getAdminOrganizers = async (req, res) => {
 
     console.log(`📊 Events map created with ${Object.keys(eventsMap).length} organizers having events`);
 
-    // ✅ STEP 4: Fetch successful transactions ONLY for events owned by organizers
-    // This ensures earnings are only calculated from tickets linked to organizer's events
+    // ✅ STEP 4: Fetch transactions ONLY for events owned by organizers
+    // This ensures earnings are scoped by organizer_id
     console.log('📈 Fetching transactions linked to organizer events...');
     let transactions = [];
     
@@ -858,16 +864,18 @@ export const getAdminOrganizers = async (req, res) => {
 
     console.log(`📊 Transaction map created with ${Object.keys(txMap).length} organizers having transactions`);
 
-    // ✅ STEP 5: Build enriched organizer data with proper validation
+    // ✅ STEP 5: Build enriched organizer data with proper scoping
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
     const enrichedOrganizers = organizers.map(org => {
-      // Validate organizer has a name
-      const fullName = org.full_name && org.full_name.trim() ? org.full_name : null;
+      // Validate organizer has a name (use email prefix as fallback)
+      let fullName = org.full_name && org.full_name.trim() ? org.full_name : null;
       
       if (!fullName) {
-        console.warn(`⚠️ Organizer ${org.id} has no name in database`);
+        // Use email prefix as fallback (not "Unknown")
+        fullName = org.email.split('@')[0];
+        console.warn(`⚠️ Organizer ${org.id} has no name, using email prefix: ${fullName}`);
       }
 
       const wallet = walletMap[org.id] || { available_balance: 0, total_earned: 0 };
@@ -884,13 +892,13 @@ export const getAdminOrganizers = async (req, res) => {
 
       return {
         id: org.id,
-        full_name: fullName || 'Unknown',
+        full_name: fullName,
         email: org.email || '',
         date_joined: org.created_at,
         available_balance: Number(wallet.available_balance || 0),
         total_earned: Number(wallet.total_earned || 0),
         total_tickets_sold: txData.count,
-        total_earnings: txData.earnings, // ✅ Earnings from organizer_earnings field
+        total_earnings: txData.earnings,
         total_events_created: eventData.count,
         last_activity_date: lastActivityDate ? lastActivityDate.toISOString() : null,
         status: isActive ? 'active' : 'inactive',
@@ -907,7 +915,7 @@ export const getAdminOrganizers = async (req, res) => {
     const totalEvents = enrichedOrganizers.reduce((sum, o) => sum + o.total_events_created, 0);
 
     console.log('📊 Data consistency check:');
-    console.log(`   Total organizers: ${totalOrganizers}`);
+    console.log(`   Total organizers: ${totalOrganizers} (matches users table count)`);
     console.log(`   Total events: ${totalEvents}`);
     console.log(`   Total tickets sold: ${totalTickets}`);
     console.log(`   Total earnings: ₦${totalEarnings.toFixed(2)}`);
