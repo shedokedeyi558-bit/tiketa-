@@ -730,7 +730,7 @@ export const getAdminOrganizers = async (req, res) => {
     console.log('🔍 Querying profiles table for all organizers...');
     const { data: organizers, error: orgError } = await supabase
       .from('profiles')
-      .select('id, name, email, role')
+      .select('id, email, role')
       .eq('role', 'organizer');
 
     if (orgError) {
@@ -849,7 +849,7 @@ export const getAdminOrganizers = async (req, res) => {
 
       return {
         id: org.id,
-        name: org.name || '',
+        name: org.email || '',
         email: org.email || '',
         total_events_created: eventData.count,
         total_tickets_sold: txData.count,
