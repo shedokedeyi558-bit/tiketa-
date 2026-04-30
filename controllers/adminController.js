@@ -724,134 +724,68 @@ export const getAdminUsers = async (req, res) => {
 // Get all organizers with detailed stats - REWRITTEN
 export const getAdminOrganizers = async (req, res) => {
   try {
-    console.log('👥 Fetching ALL organizers from profiles table...');
-
-    // ✅ STEP 1: Fetch ALL organizers from profiles table where role = 'organizer'
-    console.log('🔍 Querying profiles table for all organizers...');
     const { data: organizers, error: orgError } = await supabase
       .from('profiles')
-      .select('id, email, role, full_name')
+      .select('id, email, full_name, role')
       .eq('role', 'organizer');
 
-    if (orgError) {
-      console.error('❌ Failed to fetch organizers from profiles:', orgError);
-      throw orgError;
-    }
+    if (orgError) throw orgError;
 
-    console.log(`✅ Fetched ${organizers?.length || 0} organizers from profiles table`);
-
-    // Return empty array if no organizers (don't filter anyone out)
-    if (!organizers || organizers.length === 0) {
-      console.log('⚠️ No organizers found in profiles table');
-      return res.status(200).json({
-        success: true,
-        message: 'No organizers found',
-        data: [],
-      });
-    }
-
-    // ✅ STEP 2: For each organizer, fetch their stats
-    console.log('📊 Fetching stats for each organizer...');
-    const result = [];
-
-    for (const org of organizers) {
-      try {
-        // Count events for this organizer
-        const { count: eventCount, error: eventError } = await supabase
+    const result = await Promise.all(
+      (organizers || []).map(async (org) => {
+        const { count: eventCount } = await supabase
           .from('events')
           .select('id', { count: 'exact', head: true })
           .eq('organizer_id', org.id);
 
-        if (eventError) {
-          console.warn(`⚠️ Failed to count events for organizer ${org.id}:`, eventError);
-        }
-
-        // Count successful transactions for this organizer
-        const { count: txCount, error: txError } = await supabase
+        const { count: ticketCount } = await supabase
           .from('transactions')
           .select('id', { count: 'exact', head: true })
           .eq('organizer_id', org.id)
           .eq('status', 'success');
 
-        if (txError) {
-          console.warn(`⚠️ Failed to count transactions for organizer ${org.id}:`, txError);
-        }
-
-        // Get total earnings for this organizer
-        const { data: earnings, error: earningsError } = await supabase
+        const { data: txData } = await supabase
           .from('transactions')
           .select('organizer_earnings')
           .eq('organizer_id', org.id)
           .eq('status', 'success');
 
-        if (earningsError) {
-          console.warn(`⚠️ Failed to fetch earnings for organizer ${org.id}:`, earningsError);
-        }
-
-        const totalEarnings = (earnings || []).reduce((sum, tx) => sum + Number(tx.organizer_earnings || 0), 0);
-
-        // Get wallet balance for this organizer
-        const { data: wallet, error: walletError } = await supabase
+        const { data: wallet } = await supabase
           .from('wallets')
-          .select('available_balance')
+          .select('balance')
           .eq('organizer_id', org.id)
           .single();
 
-        if (walletError && walletError.code !== 'PGRST116') {
-          console.warn(`⚠️ Failed to fetch wallet for organizer ${org.id}:`, walletError);
-        }
+        const { data: lastEvent } = await supabase
+          .from('events')
+          .select('created_at')
+          .eq('organizer_id', org.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
 
-        // Determine display name: use full_name if available, otherwise use email prefix
-        const displayName = org.full_name && org.full_name.trim() 
-          ? org.full_name 
-          : org.email.split('@')[0];
+        const totalEarned = (txData || []).reduce(
+          (sum, t) => sum + Number(t.organizer_earnings || 0),
+          0
+        );
 
-        result.push({
+        return {
           id: org.id,
-          name: displayName,
-          email: org.email || '',
-          total_events_created: eventCount || 0,
-          total_tickets_sold: txCount || 0,
-          total_earned: totalEarnings,
-          available_balance: wallet?.available_balance || 0,
-          last_event_date: null, // Can be added if needed
-        });
+          full_name: org.full_name || org.email.split('@')[0],
+          email: org.email,
+          event_count: eventCount || 0,
+          tickets_sold: ticketCount || 0,
+          total_earned: totalEarned,
+          available_balance: wallet?.balance || 0,
+          last_event: lastEvent?.created_at || null,
+        };
+      })
+    );
 
-        console.log(`✅ Fetched stats for organizer ${org.id}: ${eventCount || 0} events, ${txCount || 0} tickets`);
-      } catch (err) {
-        console.error(`❌ Error fetching stats for organizer ${org.id}:`, err);
-        // Continue with next organizer even if one fails
-      }
-    }
-
-    console.log(`✅ Built response with ${result.length} organizers`);
-    console.log('📊 Sample organizer:', result[0] || 'No organizers');
-
-    // Log summary
-    const totalOrganizers = result.length;
-    const totalEvents = result.reduce((sum, o) => sum + o.total_events_created, 0);
-    const totalTickets = result.reduce((sum, o) => sum + o.total_tickets_sold, 0);
-    const totalEarnings = result.reduce((sum, o) => sum + o.total_earned, 0);
-
-    console.log('📊 Summary:');
-    console.log(`   Total organizers: ${totalOrganizers}`);
-    console.log(`   Total events: ${totalEvents}`);
-    console.log(`   Total tickets sold: ${totalTickets}`);
-    console.log(`   Total earnings: ₦${totalEarnings.toFixed(2)}`);
-
-    return res.status(200).json({
-      success: true,
-      data: result,
-    });
+    return res.status(200).json({ success: true, data: result });
   } catch (error) {
-    console.error('❌ Error fetching organizers:', error);
-    console.error('   Error message:', error.message);
-    console.error('   Error code:', error.code);
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-      error: error.code,
-    });
+    console.error('getAdminOrganizers error:', error);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
