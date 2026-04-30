@@ -54,30 +54,6 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
 
     // ✅ CRITICAL: Write to profiles table using service role
     console.log('📝 Creating profile record...');
-    const { data: profileData, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .upsert({
-        id: authData.user.id,
-        email,
-        name: fullName || '',
-        role,
-      }, { onConflict: 'id' })
-      .select()
-      .single();
-
-    if (profileError) {
-      console.error('❌ Profile creation failed:', {
-        error: profileError.message,
-        code: profileError.code,
-      });
-      return errorResponse(res, profileError, 'Failed to create profile', 400);
-    }
-
-    console.log('✅ Profile record created:', profileData.id);
-
-    // ✅ CRITICAL: Also write to profiles table using service role
-    // This ensures all backend queries that use the profiles table will find the data
-    console.log('📝 Creating profile record...');
     const { data: userProfile, error: userError } = await supabaseAdmin
       .from('profiles')
       .upsert({
