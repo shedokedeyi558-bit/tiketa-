@@ -22,7 +22,16 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
       });
     }
 
-    console.log('📝 Starting signup for:', { email, role });
+    // ✅ Validate fullName is provided and not empty
+    if (!fullName || !fullName.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid name',
+        message: 'Full name is required and cannot be empty'
+      });
+    }
+
+    console.log('📝 Starting signup for:', { email, role, fullName });
 
     // ✅ Sign up with Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({

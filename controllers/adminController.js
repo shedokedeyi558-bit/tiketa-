@@ -756,7 +756,6 @@ export const getAdminOrganizers = async (req, res) => {
     // ✅ STEP 2: Fetch wallets - try both table names for compatibility
     console.log('💰 Fetching wallets...');
     let wallets = [];
-    let walletError = null;
 
     // Try wallets table first (used by payment controller)
     const { data: walletsData, error: walletsErr } = await supabase
@@ -791,43 +790,11 @@ export const getAdminOrganizers = async (req, res) => {
 
     console.log(`📊 Wallet map created with ${Object.keys(walletMap).length} entries`);
 
-    // ✅ STEP 3: Fetch successful transactions for each organizer
-    console.log('📈 Fetching transactions...');
-    const { data: transactions, error: txError } = await supabase
-      .from('transactions')
-      .select('organizer_id, ticket_price, created_at')
-      .eq('status', 'success')
-      .in('organizer_id', organizerIds);
-
-    if (txError) {
-      console.warn('⚠️ Failed to fetch transactions:', txError);
-    }
-
-    console.log(`✅ Fetched ${transactions?.length || 0} successful transactions`);
-
-    const txMap = {};
-    let totalTicketsRevenue = 0;
-    (transactions || []).forEach(tx => {
-      if (!txMap[tx.organizer_id]) {
-        txMap[tx.organizer_id] = { count: 0, revenue: 0, lastDate: null };
-      }
-      txMap[tx.organizer_id].count += 1;
-      txMap[tx.organizer_id].revenue += Number(tx.ticket_price || 0);
-      totalTicketsRevenue += Number(tx.ticket_price || 0);
-      
-      const txDate = new Date(tx.created_at);
-      if (!txMap[tx.organizer_id].lastDate || txDate > txMap[tx.organizer_id].lastDate) {
-        txMap[tx.organizer_id].lastDate = txDate;
-      }
-    });
-
-    console.log(`📊 Transaction map created with ${Object.keys(txMap).length} organizers having transactions`);
-
-    // ✅ STEP 4: Fetch events for each organizer
+    // ✅ STEP 3: Fetch events for each organizer
     console.log('🎪 Fetching events...');
     const { data: events, error: eventsError } = await supabase
       .from('events')
-      .select('organizer_id, created_at')
+      .select('id, organizer_id, created_at')
       .in('organizer_id', organizerIds);
 
     if (eventsError) {
@@ -837,11 +804,14 @@ export const getAdminOrganizers = async (req, res) => {
     console.log(`✅ Fetched ${events?.length || 0} events`);
 
     const eventsMap = {};
+    const eventIds = [];
     (events || []).forEach(event => {
       if (!eventsMap[event.organizer_id]) {
         eventsMap[event.organizer_id] = { count: 0, lastDate: null };
       }
       eventsMap[event.organizer_id].count += 1;
+      eventIds.push(event.id);
+      
       const eventDate = new Date(event.created_at);
       if (!eventsMap[event.organizer_id].lastDate || eventDate > eventsMap[event.organizer_id].lastDate) {
         eventsMap[event.organizer_id].lastDate = eventDate;
@@ -850,13 +820,58 @@ export const getAdminOrganizers = async (req, res) => {
 
     console.log(`📊 Events map created with ${Object.keys(eventsMap).length} organizers having events`);
 
-    // ✅ STEP 5: Build enriched organizer data
+    // ✅ STEP 4: Fetch successful transactions ONLY for events owned by organizers
+    // This ensures earnings are only calculated from tickets linked to organizer's events
+    console.log('📈 Fetching transactions linked to organizer events...');
+    let transactions = [];
+    
+    if (eventIds.length > 0) {
+      const { data: txData, error: txError } = await supabase
+        .from('transactions')
+        .select('organizer_id, event_id, organizer_earnings, created_at')
+        .eq('status', 'success')
+        .in('event_id', eventIds);
+
+      if (txError) {
+        console.warn('⚠️ Failed to fetch transactions:', txError);
+      } else {
+        transactions = txData || [];
+        console.log(`✅ Fetched ${transactions.length} successful transactions linked to organizer events`);
+      }
+    } else {
+      console.log('⚠️ No events found, skipping transaction fetch');
+    }
+
+    const txMap = {};
+    (transactions || []).forEach(tx => {
+      if (!txMap[tx.organizer_id]) {
+        txMap[tx.organizer_id] = { count: 0, earnings: 0, lastDate: null };
+      }
+      txMap[tx.organizer_id].count += 1;
+      txMap[tx.organizer_id].earnings += Number(tx.organizer_earnings || 0);
+      
+      const txDate = new Date(tx.created_at);
+      if (!txMap[tx.organizer_id].lastDate || txDate > txMap[tx.organizer_id].lastDate) {
+        txMap[tx.organizer_id].lastDate = txDate;
+      }
+    });
+
+    console.log(`📊 Transaction map created with ${Object.keys(txMap).length} organizers having transactions`);
+
+    // ✅ STEP 5: Build enriched organizer data with proper validation
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
     const enrichedOrganizers = organizers.map(org => {
+      // Validate organizer has a name
+      const fullName = org.full_name && org.full_name.trim() ? org.full_name : null;
+      
+      if (!fullName) {
+        console.warn(`⚠️ Organizer ${org.id} has no name in database`);
+      }
+
       const wallet = walletMap[org.id] || { available_balance: 0, total_earned: 0 };
-      const txData = txMap[org.id] || { count: 0, revenue: 0, lastDate: null };
+      const txData = txMap[org.id] || { count: 0, earnings: 0, lastDate: null };
       const eventData = eventsMap[org.id] || { count: 0, lastDate: null };
 
       // Determine last activity date
@@ -869,13 +884,13 @@ export const getAdminOrganizers = async (req, res) => {
 
       return {
         id: org.id,
-        full_name: org.full_name || 'Unknown',
+        full_name: fullName || 'Unknown',
         email: org.email || '',
         date_joined: org.created_at,
         available_balance: Number(wallet.available_balance || 0),
         total_earned: Number(wallet.total_earned || 0),
         total_tickets_sold: txData.count,
-        total_revenue: txData.revenue,
+        total_earnings: txData.earnings, // ✅ Earnings from organizer_earnings field
         total_events_created: eventData.count,
         last_activity_date: lastActivityDate ? lastActivityDate.toISOString() : null,
         status: isActive ? 'active' : 'inactive',
@@ -885,15 +900,27 @@ export const getAdminOrganizers = async (req, res) => {
     console.log(`✅ Enriched ${enrichedOrganizers.length} organizers with stats`);
     console.log('📊 Sample organizer:', enrichedOrganizers[0] || 'No organizers');
 
+    // ✅ Verify data consistency
+    const totalOrganizers = enrichedOrganizers.length;
+    const totalTickets = enrichedOrganizers.reduce((sum, o) => sum + o.total_tickets_sold, 0);
+    const totalEarnings = enrichedOrganizers.reduce((sum, o) => sum + o.total_earnings, 0);
+    const totalEvents = enrichedOrganizers.reduce((sum, o) => sum + o.total_events_created, 0);
+
+    console.log('📊 Data consistency check:');
+    console.log(`   Total organizers: ${totalOrganizers}`);
+    console.log(`   Total events: ${totalEvents}`);
+    console.log(`   Total tickets sold: ${totalTickets}`);
+    console.log(`   Total earnings: ₦${totalEarnings.toFixed(2)}`);
+
     return res.status(200).json({
       success: true,
       message: 'Organizers fetched successfully',
       data: enrichedOrganizers,
       meta: {
-        total_organizers: enrichedOrganizers.length,
-        total_tickets_sold: enrichedOrganizers.reduce((sum, o) => sum + o.total_tickets_sold, 0),
-        total_revenue: enrichedOrganizers.reduce((sum, o) => sum + o.total_revenue, 0),
-        total_earned: enrichedOrganizers.reduce((sum, o) => sum + o.total_earned, 0),
+        total_organizers: totalOrganizers,
+        total_events_created: totalEvents,
+        total_tickets_sold: totalTickets,
+        total_earnings: totalEarnings,
       },
     });
   } catch (error) {
