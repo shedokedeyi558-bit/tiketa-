@@ -156,17 +156,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// Serve React app for all other routes (SPA fallback)
+// Catch-all 404 handler for undefined routes
 app.get('*', (req, res) => {
-  // Don't serve HTML for API routes
-  if (req.path.startsWith('/api/')) {
-    return res.status(404).json({ message: 'Route not found' });
-  }
-  res.sendFile(path.join(distPath, 'index.html'), (err) => {
-    if (err) {
-      res.status(404).json({ message: 'Route not found' });
-    }
-  });
+  res.status(404).json({ message: 'Route not found' });
 });
 
 // Error handling middleware
