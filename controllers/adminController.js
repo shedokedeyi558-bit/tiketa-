@@ -752,17 +752,18 @@ export const getAdminOrganizers = async (req, res) => {
 
         const { data: wallet } = await supabase
           .from('wallets')
-          .select('balance')
-          .eq('organizer_id', org.id)
+          .select('balance, available_balance')
+          .or(`organizer_id.eq.${org.id},user_id.eq.${org.id}`)
           .single();
 
-        const { data: lastEvent } = await supabase
+        const { data: lastEventData } = await supabase
           .from('events')
-          .select('created_at')
+          .select('created_at, start_date, title')
           .eq('organizer_id', org.id)
           .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
+          .limit(1);
+
+        const lastEvent = lastEventData?.[0] || null;
 
         const totalEarned = (txData || []).reduce(
           (sum, t) => sum + Number(t.organizer_earnings || 0),
@@ -776,8 +777,9 @@ export const getAdminOrganizers = async (req, res) => {
           event_count: eventCount || 0,
           tickets_sold: ticketCount || 0,
           total_earned: totalEarned,
-          available_balance: wallet?.balance || 0,
-          last_event: lastEvent?.created_at || null,
+          available_balance: wallet?.available_balance || wallet?.balance || 0,
+          last_event: lastEvent?.start_date || lastEvent?.created_at || null,
+          last_event_title: lastEvent?.title || null,
         };
       })
     );
