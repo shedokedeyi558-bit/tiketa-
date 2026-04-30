@@ -157,7 +157,7 @@ app.use((req, res, next) => {
 });
 
 // Catch-all 404 handler for undefined routes
-app.get('*', (req, res) => {
+app.use('*', (req, res) => {
   res.status(404).json({ message: 'Route not found' });
 });
 
