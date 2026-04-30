@@ -11,7 +11,10 @@ const supabaseAdmin = createClient(
 
 export const signUpOrganizerOrAdmin = async (req, res) => {
   try {
-    const { email, password, fullName, role } = req.body;
+    const { email, password, role } = req.body;
+    
+    // ✅ Extract name from all possible field names (full_name, name, or fullName)
+    const fullName = req.body.full_name || req.body.name || req.body.fullName;
 
     // ✅ Validate role
     if (!['admin', 'organizer'].includes(role)) {
