@@ -27,9 +27,9 @@ export const verifyToken = async (req, res, next) => {
       });
     }
 
-    // Fetch role from users table
+    // Fetch role from profiles table
     const { data: userProfile } = await supabaseAdmin
-      .from('users')
+      .from('profiles')
       .select('role, full_name')
       .eq('id', user.id)
       .single();

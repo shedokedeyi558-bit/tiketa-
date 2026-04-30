@@ -184,7 +184,7 @@ export const getOrganizerEmail = async (organizerId) => {
     console.log('🔍 Fetching organizer email for ID:', organizerId);
 
     const { data: user, error } = await supabase
-      .from('users')
+      .from('profiles')
       .select('email, full_name')
       .eq('id', organizerId)
       .single();

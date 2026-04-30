@@ -373,7 +373,7 @@ export const createEvent = async (req, res) => {
     );
 
     const { error: upsertError } = await supabaseAdmin
-      .from('users')
+      .from('profiles')
       .upsert({
         id: organizerId,
         email: req.user?.email || '',
@@ -392,12 +392,12 @@ export const createEvent = async (req, res) => {
       });
     }
 
-    console.log('✅ Organizer record verified/created in users table');
+    console.log('✅ Organizer record verified/created in profiles table');
 
-    // ✅ Verify organizer exists in users table
+    // ✅ Verify organizer exists in profiles table
     console.log('🔍 Verifying organizer exists...');
     const { data: organizer, error: orgError } = await supabase
-      .from('users')
+      .from('profiles')
       .select('id, role, full_name, email')
       .eq('id', organizerId)
       .single();

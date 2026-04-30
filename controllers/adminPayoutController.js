@@ -664,7 +664,7 @@ export const getRecentOrganizersController = async (req, res) => {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
     const { data: organizers, error } = await supabase
-      .from('users')
+      .from('profiles')
       .select(`
         id,
         full_name,
@@ -764,7 +764,7 @@ export const getRecentTicketsController = async (req, res) => {
     let organizerMap = {};
     if (organizerIds.length > 0) {
       const { data: organizers, error: orgError } = await supabase
-        .from('users')
+        .from('profiles')
         .select('id, full_name')
         .in('id', organizerIds);
 

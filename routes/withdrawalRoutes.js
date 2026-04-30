@@ -29,9 +29,9 @@ const requireOrganizerRole = async (req, res, next) => {
       });
     }
 
-    // Verify organizer role directly from users table
+    // Verify organizer role directly from profiles table
     const { data: userProfile } = await supabaseAdmin
-      .from('users')
+      .from('profiles')
       .select('role')
       .eq('id', userId)
       .single();

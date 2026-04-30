@@ -92,7 +92,7 @@ export const requestWithdrawal = async (req, res) => {
 
     // Fetch organizer profile
     const { data: organizer, error: orgError } = await supabase
-      .from('users')
+      .from('profiles')
       .select('*')
       .eq('id', organizerId)
       .single();

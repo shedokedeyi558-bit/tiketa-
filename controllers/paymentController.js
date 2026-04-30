@@ -74,7 +74,7 @@ export const initiatePayment = async (req, res) => {
     // ✅ CRITICAL: Validate organizer exists before creating transaction
     console.log('🔍 Validating organizer exists...');
     const { data: organizer, error: orgError } = await supabase
-      .from('users')
+      .from('profiles')
       .select('id, role')
       .eq('id', event.organizer_id)
       .eq('role', 'organizer')
@@ -681,7 +681,7 @@ async function creditOrganizerWallet(transaction) {
     // ✅ CRITICAL: Validate organizer exists
     console.log('🔍 Validating organizer exists before wallet credit...');
     const { data: organizer, error: orgError } = await supabase
-      .from('users')
+      .from('profiles')
       .select('id')
       .eq('id', organizerId)
       .eq('role', 'organizer')
@@ -805,7 +805,7 @@ async function creditAdminWallet(amount, transaction) {
   try {
     // Get admin user (assuming there's a system admin)
     const { data: adminUser } = await supabase
-      .from('users')
+      .from('profiles')
       .select('id')
       .eq('role', 'admin')
       .limit(1)

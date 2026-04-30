@@ -19,7 +19,7 @@ async function checkEvents() {
   if (data.length === 0) {
     console.log('NO_EVENTS_FOUND');
     // Find a user to be organizer
-    const { data: users } = await supabase.from('users').select('id').limit(1);
+    const { data: users } = await supabase.from('profiles').select('id').limit(1);
     if (users?.length > 0) {
       const { data: newEvent, error: insErr } = await supabase.from('events').insert([{
         organizer_id: users[0].id,

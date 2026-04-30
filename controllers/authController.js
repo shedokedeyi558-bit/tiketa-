@@ -75,11 +75,11 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
 
     console.log('✅ Profile record created:', profileData.id);
 
-    // ✅ CRITICAL: Also write to users table using service role
-    // This ensures all backend queries that use the users table will find the data
-    console.log('📝 Creating user record...');
+    // ✅ CRITICAL: Also write to profiles table using service role
+    // This ensures all backend queries that use the profiles table will find the data
+    console.log('📝 Creating profile record...');
     const { data: userProfile, error: userError } = await supabaseAdmin
-      .from('users')
+      .from('profiles')
       .upsert({
         id: authData.user.id,
         email,
@@ -92,14 +92,14 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
       .single();
 
     if (userError) {
-      console.error('❌ User record creation failed:', {
+      console.error('❌ Profile record creation failed:', {
         error: userError.message,
         code: userError.code,
       });
-      return errorResponse(res, userError, 'Failed to create user record', 400);
+      return errorResponse(res, userError, 'Failed to create profile record', 400);
     }
 
-    console.log('✅ User record created:', userProfile.id);
+    console.log('✅ Profile record created:', userProfile.id);
 
     // ✅ Auto-create wallet for organizers
     if (role === 'organizer') {
@@ -147,7 +147,7 @@ export const loginOrganizerOrAdmin = async (req, res) => {
 
     // Get user role
     const { data: userData } = await supabase
-      .from('users')
+      .from('profiles')
       .select('role')
       .eq('id', data.user.id)
       .single();

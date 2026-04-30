@@ -13,7 +13,7 @@ export const isAdmin = async (userId) => {
   try {
     if (!userId) return false;
     const { data, error } = await supabase
-      .from('users')
+      .from('profiles')
       .select('role')
       .eq('id', userId)
       .single();

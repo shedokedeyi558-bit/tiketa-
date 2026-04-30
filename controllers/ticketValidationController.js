@@ -125,7 +125,7 @@ export const getEventTickets = async (req, res) => {
 
     // Check authorization
     const { data: user } = await supabase
-      .from('users')
+      .from('profiles')
       .select('role')
       .eq('id', userId)
       .single();
@@ -184,7 +184,7 @@ export const getTicketStats = async (req, res) => {
 
     // Check authorization
     const { data: user } = await supabase
-      .from('users')
+      .from('profiles')
       .select('role')
       .eq('id', userId)
       .single();

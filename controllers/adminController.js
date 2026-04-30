@@ -310,7 +310,7 @@ export const createAdminEvent = async (req, res) => {
     if (organizer_id) {
       console.log('🔍 Validating organizer exists...');
       const { data: organizer, error: orgError } = await supabase
-        .from('users')
+        .from('profiles')
         .select('id, role')
         .eq('id', organizer_id)
         .eq('role', 'organizer')
@@ -521,8 +521,8 @@ export const getDashboardStats = async (req, res) => {
 
     // Query 2: Total users (with error handling)
     try {
-      console.log('⏳ Querying total users from users table...');
-      const usersResult = await supabase.from('users').select('id', { count: 'exact', head: true });
+      console.log('⏳ Querying total users from profiles table...');
+      const usersResult = await supabase.from('profiles').select('id', { count: 'exact', head: true });
       if (usersResult.error) {
         console.error('❌ Users query error:', {
           message: usersResult.error.message,
@@ -608,9 +608,9 @@ export const getDashboardStats = async (req, res) => {
 
     // Query 5: Organizers count (with error handling)
     try {
-      console.log('⏳ Querying organizers from users table...');
+      console.log('⏳ Querying organizers from profiles table...');
       const organizersResult = await supabase
-        .from('users')
+        .from('profiles')
         .select('id', { count: 'exact', head: true })
         .eq('role', 'organizer');
       
@@ -701,7 +701,7 @@ export const getDashboardStats = async (req, res) => {
 export const getAdminUsers = async (req, res) => {
   try {
     const { data, error } = await supabase
-      .from('users')
+      .from('profiles')
       .select('*')
       .order('created_at', { ascending: false });
 
@@ -1081,7 +1081,7 @@ export const getRevenueAnalytics = async (req, res) => {
     let organizerMap = {};
     if (organizerIds.length > 0) {
       const { data: organizers, error: orgError } = await supabase
-        .from('users')
+        .from('profiles')
         .select('id, full_name, email')
         .in('id', organizerIds);
 

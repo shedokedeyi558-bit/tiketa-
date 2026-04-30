@@ -16,7 +16,7 @@ async function checkEvents() {
   if (data.length === 0) {
     console.log('DB is empty. Seeding a test event...');
     // I don't have an organizer_id, need to find one
-    const { data: users } = await supabase.from('users').select('id').limit(1);
+    const { data: users } = await supabase.from('profiles').select('id').limit(1);
     if (users && users.length > 0) {
       const { data: newEvent, error: insertError } = await supabase.from('events').insert([
         {
