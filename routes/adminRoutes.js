@@ -12,6 +12,7 @@ import {
   getPendingEvents,
   approveEvent,
   rejectEvent,
+  getTransactionDiagnostics,
 } from '../controllers/adminController.js';
 import {
   getWithdrawalsController,
@@ -47,6 +48,9 @@ router.get('/stats', getDashboardStats);
 
 // Revenue analytics
 router.get('/revenue', getRevenueAnalytics);
+
+// Transaction diagnostics (for debugging)
+router.get('/diagnostics/transactions', getTransactionDiagnostics);
 
 // Payout management
 router.get('/payouts/withdrawals', getWithdrawalsController);

@@ -849,6 +849,55 @@ export const getAdminOrganizers = async (req, res) => {
 };
 
 
+// Diagnostic endpoint - check transaction count
+export const getTransactionDiagnostics = async (req, res) => {
+  try {
+    console.log('🔍 TRANSACTION DIAGNOSTICS ENDPOINT');
+    
+    // Count all transactions by status
+    const { data: allTx, error: allError } = await supabase
+      .from('transactions')
+      .select('status', { count: 'exact' });
+    
+    const { data: successTx, error: successError } = await supabase
+      .from('transactions')
+      .select('*', { count: 'exact' })
+      .eq('status', 'success');
+    
+    const { data: pendingTx, error: pendingError } = await supabase
+      .from('transactions')
+      .select('*', { count: 'exact' })
+      .eq('status', 'pending');
+    
+    const { data: failedTx, error: failedError } = await supabase
+      .from('transactions')
+      .select('*', { count: 'exact' })
+      .eq('status', 'failed');
+
+    return res.status(200).json({
+      success: true,
+      diagnostics: {
+        total_transactions: allTx?.length || 0,
+        successful_count: successTx?.length || 0,
+        successful_data: successTx || [],
+        pending_count: pendingTx?.length || 0,
+        failed_count: failedTx?.length || 0,
+        errors: {
+          all: allError?.message,
+          success: successError?.message,
+          pending: pendingError?.message,
+          failed: failedError?.message,
+        }
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
 // Get revenue analytics
 export const getRevenueAnalytics = async (req, res) => {
   try {
