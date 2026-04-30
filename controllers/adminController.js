@@ -852,9 +852,12 @@ export const getAdminOrganizers = async (req, res) => {
 // Get revenue analytics
 export const getRevenueAnalytics = async (req, res) => {
   try {
+    console.log('\n\n🔥🔥🔥 REVENUE ANALYTICS ENDPOINT CALLED 🔥🔥🔥');
     console.log('💰 Fetching revenue analytics...');
+    console.log('⏰ Timestamp:', new Date().toISOString());
 
     // Fetch all successful transactions with all needed fields
+    console.log('🔍 Querying transactions table with status = "success"...');
     const { data: transactions, error: txError } = await supabase
       .from('transactions')
       .select('event_id, organizer_id, ticket_price, platform_commission, organizer_earnings, total_amount, processing_fee, created_at')
@@ -862,25 +865,41 @@ export const getRevenueAnalytics = async (req, res) => {
       .order('created_at', { ascending: true });
 
     if (txError) {
-      console.error('❌ Failed to fetch transactions:', txError);
+      console.error('❌ QUERY ERROR - Failed to fetch transactions:', txError);
+      console.error('   Error Code:', txError.code);
+      console.error('   Error Message:', txError.message);
+      console.error('   Error Details:', txError.details);
       throw txError;
     }
 
-    console.log(`✅ Fetched ${transactions?.length || 0} successful transactions`);
-    console.log('📊 Raw transactions data:', JSON.stringify(transactions, null, 2));
+    console.log(`\n✅ QUERY SUCCESS - Fetched ${transactions?.length || 0} successful transactions`);
+    console.log('📊 RAW TRANSACTIONS DATA FROM DATABASE:');
+    console.log(JSON.stringify(transactions, null, 2));
     
     if (transactions && transactions.length > 0) {
-      console.log('📊 Sample transaction:', JSON.stringify(transactions[0], null, 2));
-      console.log('📊 First 3 transactions:', JSON.stringify(transactions.slice(0, 3), null, 2));
+      console.log('\n📊 FIRST TRANSACTION DETAILS:');
+      console.log(JSON.stringify(transactions[0], null, 2));
+      
+      console.log('\n📊 FIRST 3 TRANSACTIONS:');
+      console.log(JSON.stringify(transactions.slice(0, 3), null, 2));
+      
+      console.log('\n📊 TRANSACTION FIELD TYPES:');
+      const firstTx = transactions[0];
+      console.log('   ticket_price:', typeof firstTx.ticket_price, '=', firstTx.ticket_price);
+      console.log('   processing_fee:', typeof firstTx.processing_fee, '=', firstTx.processing_fee);
+      console.log('   total_amount:', typeof firstTx.total_amount, '=', firstTx.total_amount);
+      console.log('   platform_commission:', typeof firstTx.platform_commission, '=', firstTx.platform_commission);
+      console.log('   organizer_earnings:', typeof firstTx.organizer_earnings, '=', firstTx.organizer_earnings);
     } else {
-      console.warn('⚠️ No successful transactions found!');
-      console.warn('⚠️ Returning zero data - check if there are any successful transactions in the database');
+      console.warn('\n⚠️ NO SUCCESSFUL TRANSACTIONS FOUND!');
+      console.warn('⚠️ Database returned empty array');
+      console.warn('⚠️ Check if there are any transactions with status = "success" in the database');
     }
 
     // ✅ Calculate summary stats according to exact business logic
+    console.log('\n📊 STARTING CALCULATIONS...');
     const totalTicketRevenue = (transactions || []).reduce((sum, t) => {
       const val = Number(t.ticket_price || 0);
-      console.log(`  Adding ticket_price: ${val}`);
       return sum + val;
     }, 0);
     
@@ -892,7 +911,8 @@ export const getRevenueAnalytics = async (req, res) => {
     const totalPlatformNetProfit = totalProcessingFees - totalSquadcoCharges + totalPlatformCommission;
     const totalTransactions = transactions?.length || 0;
 
-    console.log('✅ Summary stats calculated:', {
+    console.log('\n✅ CALCULATIONS COMPLETE - Summary stats:');
+    console.log({
       totalTicketRevenue: Number(totalTicketRevenue),
       totalProcessingFees: Number(totalProcessingFees),
       totalAmountCollected: Number(totalAmountCollected),
@@ -1039,6 +1059,22 @@ export const getRevenueAnalytics = async (req, res) => {
       .sort((a, b) => b.ticket_revenue - a.ticket_revenue);
 
     console.log(`✅ Revenue by organizer calculated for ${revenueByOrganizer.length} organizers`);
+
+    console.log('\n🎯 FINAL RESPONSE DATA:');
+    console.log('Summary:', {
+      total_ticket_revenue: totalTicketRevenue,
+      total_processing_fees: totalProcessingFees,
+      total_amount_collected: totalAmountCollected,
+      total_squadco_charges: totalSquadcoCharges,
+      total_platform_commission: totalPlatformCommission,
+      total_organizer_earnings: totalOrganizerEarnings,
+      total_platform_net_profit: totalPlatformNetProfit,
+      total_transactions: totalTransactions,
+    });
+    console.log('Monthly Data Count:', monthlyChartData.length);
+    console.log('Revenue by Event Count:', revenueByEvent.length);
+    console.log('Revenue by Organizer Count:', revenueByOrganizer.length);
+    console.log('\n✅ REVENUE ANALYTICS ENDPOINT COMPLETE - Returning data to frontend\n\n');
 
     return res.status(200).json({
       success: true,
