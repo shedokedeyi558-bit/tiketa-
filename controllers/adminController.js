@@ -730,7 +730,7 @@ export const getAdminOrganizers = async (req, res) => {
     console.log('🔍 Querying profiles table for all organizers...');
     const { data: organizers, error: orgError } = await supabase
       .from('profiles')
-      .select('id, email, role')
+      .select('id, email, role, full_name')
       .eq('role', 'organizer');
 
     if (orgError) {
@@ -849,7 +849,7 @@ export const getAdminOrganizers = async (req, res) => {
 
       return {
         id: org.id,
-        name: org.email || '',
+        name: org.full_name || '',
         email: org.email || '',
         total_events_created: eventData.count,
         total_tickets_sold: txData.count,
@@ -964,6 +964,7 @@ export const getRevenueAnalytics = async (req, res) => {
     }
 
     console.log(`\n✅ QUERY SUCCESS - Fetched ${transactions?.length || 0} successful transactions`);
+    console.log('RAW REVENUE DATA:', JSON.stringify(transactions, null, 2));
     console.log('📊 RAW TRANSACTIONS DATA FROM DATABASE:');
     console.log(JSON.stringify(transactions, null, 2));
     
@@ -1107,7 +1108,7 @@ export const getRevenueAnalytics = async (req, res) => {
     if (organizerIds.length > 0) {
       const { data: organizers, error: orgError } = await supabase
         .from('profiles')
-        .select('id, name, email')
+        .select('id, full_name, email')
         .in('id', organizerIds);
 
       if (orgError) {
@@ -1135,7 +1136,7 @@ export const getRevenueAnalytics = async (req, res) => {
         const organizer = organizerMap[id];
         return {
           organizer_id: id,
-          organizer_name: organizer?.name || 'Unknown',
+          organizer_name: organizer?.full_name || 'Unknown',
           organizer_email: organizer?.email || '',
           tickets_sold: ticketsSold,
           ticket_revenue: ticketRevenue,
