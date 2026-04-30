@@ -815,12 +815,37 @@ export const getAdminOrganizers = async (req, res) => {
 
     console.log(`📊 Transactions map: ${Object.keys(txMap).length} organizers have transactions`);
 
-    // ✅ STEP 4: Build response - return ALL organizers even if they have zero events or zero sales
+    // ✅ STEP 4: Fetch wallet balances for each organizer
+    console.log('💰 Fetching wallet balances...');
+    let wallets = [];
+    
+    const { data: walletData, error: walletError } = await supabase
+      .from('wallets')
+      .select('organizer_id, available_balance')
+      .in('organizer_id', organizerIds);
+
+    if (walletError) {
+      console.warn('⚠️ Failed to fetch wallets:', walletError);
+    } else {
+      wallets = walletData || [];
+      console.log(`✅ Fetched ${wallets.length} wallet records`);
+    }
+
+    // Build wallets map: organizer_id -> available_balance
+    const walletMap = {};
+    (wallets || []).forEach(wallet => {
+      walletMap[wallet.organizer_id] = Number(wallet.available_balance || 0);
+    });
+
+    console.log(`📊 Wallets map: ${Object.keys(walletMap).length} organizers have wallets`);
+
+    // ✅ STEP 5: Build response - return ALL organizers even if they have zero events or zero sales
     console.log('🔨 Building response with all organizers...');
     
     const result = organizers.map(org => {
       const eventData = eventsMap[org.id] || { count: 0, lastDate: null };
       const txData = txMap[org.id] || { count: 0, earnings: 0 };
+      const balance = walletMap[org.id] || 0;
 
       return {
         id: org.id,
@@ -829,7 +854,7 @@ export const getAdminOrganizers = async (req, res) => {
         total_events_created: eventData.count,
         total_tickets_sold: txData.count,
         total_earned: Number(txData.earnings || 0),
-        available_balance: Number(txData.earnings || 0), // Available balance = total earned (simplified)
+        available_balance: balance,
         last_event_date: eventData.lastDate ? eventData.lastDate.toISOString() : null,
       };
     });
