@@ -752,14 +752,14 @@ export const getAdminOrganizers = async (req, res) => {
 
         const { data: walletRows } = await supabase
           .from('wallets')
-          .select('balance, available_balance')
+          .select('available_balance, pending_balance, total_earned')
           .eq('organizer_id', org.id);
 
         const wallet = walletRows?.[0] || null;
 
         const { data: lastEventRows } = await supabase
           .from('events')
-          .select('created_at, start_date, title')
+          .select('created_at, title')
           .eq('organizer_id', org.id)
           .order('created_at', { ascending: false })
           .limit(1);
@@ -778,8 +778,8 @@ export const getAdminOrganizers = async (req, res) => {
           event_count: eventCount || 0,
           tickets_sold: ticketCount || 0,
           total_earned: totalEarned,
-          available_balance: wallet?.available_balance || wallet?.balance || 0,
-          last_event: lastEvent?.start_date || lastEvent?.created_at || null,
+          available_balance: wallet?.available_balance || 0,
+          last_event: lastEvent?.created_at || null,
           last_event_title: lastEvent?.title || null,
         };
       })
