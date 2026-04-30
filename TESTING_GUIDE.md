@@ -1,460 +1,402 @@
-# Testing Guide
+# Testing Guide - Revenue & Transaction System
 
-## Overview
+## 🧪 QUICK TESTING CHECKLIST
 
-This project includes comprehensive testing for all API endpoints. Tests can be run locally or against production deployments.
+### 1. Dashboard Stats Endpoint
+**Endpoint**: `GET /api/v1/admin/stats`
 
-## Test Files
-
-- `tests/runTests.js` - Simple endpoint test runner (no dependencies)
-- `tests/endpoints.test.js` - Jest test suite with supertest
-- `jest.config.js` - Jest configuration
-
-## Running Tests
-
-### 1. Install Dependencies
-```bash
-npm install
+**Expected Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "totalEvents": 15,
+    "totalOrders": 50,
+    "totalRevenue": 10600,
+    "successfulPayments": 5,
+    "pendingPayments": 0,
+    "platformCommission": 315,
+    "activeEvents": 8,
+    "organizers": 3,
+    "pendingWithdrawals": 0
+  }
+}
 ```
 
-### 2. Run All Tests
-```bash
-npm test
+**Test Cases**:
+- ✅ All values are numbers (never null/undefined)
+- ✅ Pending payments shows 0 (not "—")
+- ✅ Active events only counts future dates
+- ✅ Total revenue = sum of total_amount from successful transactions
+
+---
+
+### 2. Revenue Analytics Endpoint
+**Endpoint**: `GET /api/v1/admin/revenue`
+
+**Expected Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "summary": {
+      "total_ticket_revenue": 10500,
+      "total_processing_fees": 100,
+      "total_amount_collected": 10600,
+      "total_squadco_charges": 127.2,
+      "total_platform_commission": 315,
+      "total_organizer_earnings": 10185,
+      "total_platform_net_profit": 287.8,
+      "total_transactions": 5
+    },
+    "monthlyData": [...],
+    "revenueByEvent": [...],
+    "revenueByOrganizer": [...]
+  }
+}
 ```
 
-### 3. Run Endpoint Tests Only
-```bash
-npm run test:endpoints
-```
+**Test Cases**:
+- ✅ Total ticket revenue = sum of ticket_price
+- ✅ Total processing fees = sum of processing_fee (₦100 × count)
+- ✅ Total amount collected = sum of total_amount
+- ✅ Total squadco charges = 1.2% of total_amount_collected
+- ✅ Total platform commission = sum of platform_commission
+- ✅ Total organizer earnings = sum of organizer_earnings
+- ✅ Total platform net profit = processing_fees - squadco_charges + platform_commission
 
-### 4. Run Tests in Watch Mode
-```bash
-npm run test:watch
+**Verification Formula**:
 ```
-
-### 5. Test Against Production
-```bash
-TEST_URL=https://your-project.vercel.app npm run test:endpoints
+For 5 transactions of ₦2,000 each:
+- Total Ticket Revenue: ₦10,000
+- Total Processing Fees: ₦500 (₦100 × 5)
+- Total Amount Collected: ₦10,500
+- Total Squadco Charges: ₦126 (₦10,500 × 1.2%)
+- Total Platform Commission: ₦300 (₦10,000 × 3%)
+- Total Organizer Earnings: ₦9,700 (₦10,000 - ₦300)
+- Total Platform Net Profit: ₦674 (₦500 - ₦126 + ₦300)
 ```
 
 ---
 
-## Test Coverage
+### 3. Transaction Diagnostics Endpoint
+**Endpoint**: `GET /api/v1/admin/diagnostics/transactions`
 
-### Health Check
-- ✅ GET /health - Server status
+**Expected Response**:
+```json
+{
+  "success": true,
+  "diagnostics": {
+    "total_transactions": 50,
+    "successful_count": 5,
+    "successful_data": [
+      {
+        "id": "tx-123",
+        "ticket_price": 2000,
+        "processing_fee": 100,
+        "total_amount": 2100,
+        "platform_commission": 60,
+        "organizer_earnings": 1940,
+        "status": "success"
+      }
+    ],
+    "pending_count": 2,
+    "failed_count": 0,
+    "errors": {
+      "all": null,
+      "success": null,
+      "pending": null,
+      "failed": null
+    }
+  }
+}
+```
 
-### Authentication
-- ✅ POST /auth/signup - Create new account
-- ✅ POST /auth/login - User login
-
-### Events
-- ✅ GET /events - List all events
-- ✅ GET /events/:id - Get event details
-- ✅ POST /events - Create event
-- ✅ PUT /events/:id - Update event
-- ✅ DELETE /events/:id - Delete event
-
-### Tickets
-- ✅ GET /tickets - List tickets
-- ✅ POST /tickets - Create ticket
-- ✅ GET /tickets/validate - Validate ticket
-
-### Payments
-- ✅ POST /payments - Initiate payment
-- ✅ GET /payments/:reference - Get payment status
-- ✅ POST /payments/squad - Process Squadco payment
-
-### Wallet
-- ✅ GET /wallet - Get wallet balance
-- ✅ POST /wallet/credit - Credit wallet
-- ✅ GET /wallet/transactions - Get transactions
-
-### Withdrawals
-- ✅ POST /withdrawals - Create withdrawal
-- ✅ GET /withdrawals - List withdrawals
-- ✅ GET /withdrawals/:id - Get withdrawal details
-
-### Users
-- ✅ GET /users - List users
-- ✅ GET /users/:id - Get user details
-- ✅ PUT /users/:id - Update user
-
-### Orders
-- ✅ GET /orders - List orders
-- ✅ POST /orders - Create order
-- ✅ GET /orders/:id - Get order details
-
-### Admin
-- ✅ GET /admin/dashboard - Dashboard data
-- ✅ GET /admin/users - List all users
-- ✅ GET /admin/events - List all events
-
-### Error Handling
-- ✅ 404 Not Found
-- ✅ 400 Bad Request
-- ✅ 401 Unauthorized
-- ✅ 403 Forbidden
-- ✅ 500 Server Error
+**Test Cases**:
+- ✅ Shows count of transactions by status
+- ✅ Returns actual transaction data for successful transactions
+- ✅ Platform commission = ticket_price × 0.03
+- ✅ Organizer earnings = ticket_price - platform_commission
 
 ---
 
-## Manual Testing
+### 4. Event Approval System
+**Endpoints**:
+- `GET /api/v1/admin/events/pending` - Get pending events
+- `POST /api/v1/admin/events/:id/approve` - Approve event
+- `POST /api/v1/admin/events/:id/reject` - Reject event
 
-### Using cURL
+**Test Workflow**:
+1. Create event as organizer → status='pending'
+2. Call `GET /api/v1/admin/events/pending` → should see the event
+3. Call `POST /api/v1/admin/events/:id/approve` → status='active'
+4. Call `GET /api/v1/events` → should see the event (if future date)
+5. Verify email sent to organizer
 
-**Health Check:**
-```bash
-curl http://localhost:5001/health
-```
-
-**Get All Events:**
-```bash
-curl http://localhost:5001/api/v1/events
-```
-
-**Create Event (with auth):**
-```bash
-curl -X POST http://localhost:5001/api/v1/events \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "My Event",
-    "date": "2024-06-15T19:00:00Z",
-    "location": "Main Hall",
-    "capacity": 100
-  }'
-```
-
-**Login:**
-```bash
-curl -X POST http://localhost:5001/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "organizer@example.com",
-    "password": "password123"
-  }'
-```
-
-### Using Postman
-
-1. Import `tests/postman-collection.json` into Postman
-2. Set variables:
-   - `base_url`: http://localhost:5001
-   - `api_version`: v1
-   - `token`: (get from login response)
-3. Run requests
-
-### Using Insomnia
-
-1. Import `tests/postman-collection.json` into Insomnia
-2. Set environment variables
-3. Run requests
+**Test Cases**:
+- ✅ New events have status='pending'
+- ✅ Pending events don't appear on public listing
+- ✅ Approved events appear on public listing (if future date)
+- ✅ Rejected events don't appear on public listing
+- ✅ Email notifications sent on approval/rejection
 
 ---
 
-## Test Scenarios
+### 5. Admin Organizers Endpoint
+**Endpoint**: `GET /api/v1/admin/organizers`
 
-### Scenario 1: Complete User Flow
-
-```bash
-# 1. Sign up
-curl -X POST http://localhost:5001/api/v1/auth/signup \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "test@example.com",
-    "password": "TestPassword123!",
-    "name": "Test User",
-    "role": "organizer"
-  }'
-
-# 2. Login (get token)
-curl -X POST http://localhost:5001/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "test@example.com",
-    "password": "TestPassword123!"
-  }'
-
-# 3. Create event (use token from login)
-curl -X POST http://localhost:5001/api/v1/events \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "My Event",
-    "date": "2024-06-15T19:00:00Z",
-    "location": "Main Hall",
-    "capacity": 100
-  }'
-
-# 4. Get wallet balance
-curl http://localhost:5001/api/v1/wallet \
-  -H "Authorization: Bearer <token>"
-
-# 5. Create withdrawal
-curl -X POST http://localhost:5001/api/v1/withdrawals \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "amount": 5000,
-    "bankCode": "001",
-    "accountNumber": "1234567890"
-  }'
+**Expected Response**:
+```json
+{
+  "success": true,
+  "message": "Organizers fetched successfully",
+  "data": [
+    {
+      "id": "org-123",
+      "full_name": "John Organizer",
+      "email": "john@example.com",
+      "date_joined": "2024-01-15T10:00:00Z",
+      "available_balance": 5000,
+      "total_earned": 10000,
+      "total_tickets_sold": 50,
+      "total_events_created": 5,
+      "last_activity_date": "2024-04-28T15:30:00Z",
+      "status": "active"
+    }
+  ]
+}
 ```
 
-### Scenario 2: Payment Flow
-
-```bash
-# 1. Create payment
-curl -X POST http://localhost:5001/api/v1/payments \
-  -H "Content-Type: application/json" \
-  -d '{
-    "amount": 5000,
-    "email": "customer@example.com",
-    "reference": "test-payment-001"
-  }'
-
-# 2. Check payment status
-curl http://localhost:5001/api/v1/payments/test-payment-001
-```
-
-### Scenario 3: Ticket Management
-
-```bash
-# 1. Create event (requires auth)
-# ... (see Scenario 1)
-
-# 2. Create ticket for event
-curl -X POST http://localhost:5001/api/v1/tickets \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "eventId": "event-id",
-    "type": "standard",
-    "price": 5000,
-    "quantity": 100
-  }'
-
-# 3. Validate ticket
-curl "http://localhost:5001/api/v1/tickets/validate?code=TICKET123"
-```
+**Test Cases**:
+- ✅ Shows all organizers
+- ✅ Available balance from wallets table
+- ✅ Total earned from wallets table
+- ✅ Total tickets sold = count of transactions with status='success'
+- ✅ Total events created = count of events
+- ✅ Last activity date = most recent transaction or event
+- ✅ Status = 'active' if activity in last 30 days, else 'inactive'
 
 ---
 
-## Continuous Integration
+### 6. Public Events Endpoint
+**Endpoint**: `GET /api/v1/events`
 
-### GitHub Actions Example
-
-Create `.github/workflows/test.yml`:
-
-```yaml
-name: Tests
-
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    
-    steps:
-      - uses: actions/checkout@v2
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v2
-        with:
-          node-version: '18'
-      
-      - name: Install dependencies
-        run: npm install
-      
-      - name: Run tests
-        run: npm test
-      
-      - name: Run endpoint tests
-        run: npm run test:endpoints
+**Expected Response**:
+```json
+{
+  "success": true,
+  "message": "Events fetched successfully",
+  "data": [
+    {
+      "id": "event-123",
+      "title": "Concert 2024",
+      "date": "2024-05-15",
+      "location": "Stadium",
+      "status": "active",
+      "tickets_sold": 50,
+      "total_tickets": 100,
+      "tickets_remaining": 50
+    }
+  ],
+  "meta": {
+    "count": 1,
+    "filters": {
+      "status": "active",
+      "dateFilter": "upcoming",
+      "sortBy": "date",
+      "sortOrder": "asc"
+    }
+  }
+}
 ```
+
+**Test Cases**:
+- ✅ Only shows events with status='active'
+- ✅ Only shows events with future dates (by default)
+- ✅ Allows filtering by date range
+- ✅ Proper ticket calculation (unlimited vs limited)
 
 ---
 
-## Performance Testing
+### 7. Organizer Events Endpoint
+**Endpoint**: `GET /api/v1/events/organizer`
 
-### Load Testing with Apache Bench
-
-```bash
-# Install Apache Bench (if not installed)
-# macOS: brew install httpd
-# Ubuntu: sudo apt-get install apache2-utils
-
-# Test health endpoint
-ab -n 1000 -c 10 http://localhost:5001/health
-
-# Test events endpoint
-ab -n 1000 -c 10 http://localhost:5001/api/v1/events
+**Expected Response**:
+```json
+{
+  "success": true,
+  "message": "Events fetched successfully",
+  "data": [
+    {
+      "id": "event-123",
+      "title": "Concert 2024",
+      "date": "2024-05-15",
+      "location": "Stadium",
+      "status": "pending",
+      "tickets_sold": 0,
+      "total_tickets": 100,
+      "tickets_remaining": 100
+    }
+  ],
+  "meta": {
+    "count": 1,
+    "filters": {
+      "status": "active",
+      "dateFilter": "upcoming",
+      "sortBy": "date",
+      "sortOrder": "asc"
+    }
+  }
+}
 ```
 
-### Load Testing with wrk
-
-```bash
-# Install wrk
-# macOS: brew install wrk
-# Ubuntu: sudo apt-get install wrk
-
-# Test health endpoint
-wrk -t4 -c100 -d30s http://localhost:5001/health
-
-# Test events endpoint
-wrk -t4 -c100 -d30s http://localhost:5001/api/v1/events
-```
+**Test Cases**:
+- ✅ Shows all organizer's events (all statuses)
+- ✅ Includes pending events
+- ✅ Includes active events
+- ✅ Includes rejected events
+- ✅ Allows filtering by status
+- ✅ Allows filtering by date range
 
 ---
 
-## Debugging Tests
+### 8. Event Stats Endpoint
+**Endpoint**: `GET /api/v1/events/:id/stats`
 
-### Enable Verbose Output
-
-```bash
-# Run tests with verbose output
-npm test -- --verbose
-
-# Run endpoint tests with debug info
-DEBUG=* npm run test:endpoints
+**Expected Response**:
+```json
+{
+  "success": true,
+  "message": "Event stats fetched successfully",
+  "data": {
+    "event": {
+      "id": "event-123",
+      "title": "Concert 2024",
+      "date": "2024-05-15",
+      "location": "Stadium",
+      "tickets_sold": 5,
+      "total_tickets": 100
+    },
+    "transactions": {
+      "total": 5,
+      "successful": 5,
+      "pending": 0,
+      "failed": 0
+    },
+    "revenue": {
+      "gross_revenue": 10000,
+      "platform_fee": 300,
+      "net_earnings": 9700,
+      "organizer_earnings": 9700
+    },
+    "tickets": {
+      "count": 5,
+      "total_quantity": 5
+    }
+  }
+}
 ```
 
-### Check Test Output
-
-```bash
-# Run specific test file
-npm test -- tests/endpoints.test.js
-
-# Run tests matching pattern
-npm test -- --testNamePattern="Auth"
-```
-
-### Common Issues
-
-**Tests timing out:**
-- Increase timeout: `jest.setTimeout(10000)`
-- Check if server is running
-- Verify database connection
-
-**Tests failing with 401:**
-- Verify authentication token
-- Check JWT secret
-- Verify token expiration
-
-**Tests failing with CORS error:**
-- Check CORS_ORIGIN in .env
-- Verify allowed origins
-- Check request headers
+**Test Cases**:
+- ✅ Gross revenue = sum of ticket_price (NOT total_amount)
+- ✅ Platform fee = sum of platform_commission (3% of ticket_price)
+- ✅ Net earnings = gross_revenue - platform_fee
+- ✅ Organizer earnings matches net earnings
 
 ---
 
-## Test Best Practices
+## 🔍 MANUAL TESTING STEPS
 
-### 1. Test Organization
-- Group related tests
-- Use descriptive test names
-- Keep tests focused and small
+### Step 1: Create a Test Transaction
+1. Go to frontend and create a test event
+2. Buy a ticket for ₦2,000
+3. Complete payment with Squadco
+4. Verify transaction is created with status='success'
 
-### 2. Test Data
-- Use unique identifiers (timestamps, UUIDs)
-- Clean up test data after tests
-- Don't rely on test order
+### Step 2: Check Dashboard Stats
+1. Go to admin dashboard
+2. Check stats card shows:
+   - Total Revenue: ₦2,100 (ticket_price + processing_fee)
+   - Platform Commission: ₦60 (3% of ₦2,000)
+   - Pending Payments: 0
 
-### 3. Assertions
-- Test both success and failure cases
-- Verify response status codes
-- Check response data structure
+### Step 3: Check Revenue Analytics
+1. Go to admin revenue page
+2. Verify shows:
+   - Total Ticket Revenue: ₦2,000
+   - Total Processing Fees: ₦100
+   - Total Amount Collected: ₦2,100
+   - Total Squadco Charges: ₦25.20 (1.2% of ₦2,100)
+   - Total Platform Commission: ₦60 (3% of ₦2,000)
+   - Total Organizer Earnings: ₦1,940 (₦2,000 - ₦60)
+   - Total Platform Net Profit: ₦134.80 (₦100 - ₦25.20 + ₦60)
 
-### 4. Mocking
-- Mock external services
-- Mock database calls
-- Mock payment gateway
+### Step 4: Check Transaction Diagnostics
+1. Call `GET /api/v1/admin/diagnostics/transactions`
+2. Verify shows:
+   - successful_count: 1
+   - successful_data contains the transaction with correct values
 
-### 5. Coverage
-- Aim for >80% coverage
-- Test error paths
-- Test edge cases
+### Step 5: Check Organizer Stats
+1. Call `GET /api/v1/admin/organizers`
+2. Verify organizer shows:
+   - total_tickets_sold: 1
+   - total_earned: ₦1,940 (organizer_earnings)
+   - available_balance: ₦1,940
 
----
-
-## Monitoring Test Results
-
-### Local Development
-```bash
-# Watch mode - reruns tests on file changes
-npm run test:watch
-
-# Coverage report
-npm test -- --coverage
-```
-
-### CI/CD Pipeline
-- Tests run on every push
-- Tests run on pull requests
-- Failures block merges
-- Coverage reports generated
-
-### Production Monitoring
-```bash
-# Test production endpoint
-TEST_URL=https://your-domain.vercel.app npm run test:endpoints
-
-# Set up scheduled tests
-# Use cron job or CI/CD scheduler
-```
+### Step 6: Check Event Stats
+1. Call `GET /api/v1/events/:id/stats`
+2. Verify shows:
+   - gross_revenue: ₦2,000
+   - platform_fee: ₦60
+   - net_earnings: ₦1,940
 
 ---
 
-## Troubleshooting
+## 🐛 DEBUGGING TIPS
 
-### Tests Won't Run
-```bash
-# Clear cache
-npm test -- --clearCache
+### If Revenue Shows ₦0:
+1. Check if there are any transactions with status='success'
+2. Run: `GET /api/v1/admin/diagnostics/transactions`
+3. If successful_count is 0, no transactions exist yet
+4. If successful_count > 0 but revenue is ₦0, check console logs
 
-# Reinstall dependencies
-rm -rf node_modules package-lock.json
-npm install
+### If Platform Commission is Wrong:
+1. Check transaction in database:
+   ```sql
+   SELECT ticket_price, platform_commission, organizer_earnings
+   FROM transactions
+   WHERE id = 'tx-123';
+   ```
+2. Verify: platform_commission = ticket_price × 0.03
+3. If wrong, run: `node fixHistoricalTransactions.js`
 
-# Check Node version
-node --version  # Should be 18+
-```
+### If Organizer Earnings is Wrong:
+1. Check transaction in database
+2. Verify: organizer_earnings = ticket_price - platform_commission
+3. If wrong, run: `node fixHistoricalTransactions.js`
 
-### Tests Timing Out
-```bash
-# Increase timeout
-jest.setTimeout(30000)
-
-# Check if server is running
-npm run dev
-
-# Check database connection
-```
-
-### CORS Errors in Tests
-```bash
-# Update CORS_ORIGIN in .env
-CORS_ORIGIN=http://localhost:5001,http://localhost:5173
-
-# Restart server
-npm run dev
-```
-
-### Database Connection Errors
-```bash
-# Verify Supabase credentials
-cat .env | grep SUPABASE
-
-# Test connection
-node checkDB.js
-```
+### To View Detailed Logs:
+1. Visit admin dashboard revenue page
+2. Check Vercel backend logs
+3. Look for "🔥🔥🔥 REVENUE ANALYTICS ENDPOINT CALLED 🔥🔥🔥"
+4. Review transaction data and calculations
 
 ---
 
-## Resources
+## ✅ FINAL VERIFICATION
 
-- [Jest Documentation](https://jestjs.io/)
-- [Supertest Documentation](https://github.com/visionmedia/supertest)
-- [Testing Best Practices](https://testingjavascript.com/)
-- [API Testing Guide](https://www.postman.com/api-testing/)
+Before considering the implementation complete:
+
+- [ ] Dashboard stats shows correct values
+- [ ] Revenue analytics shows correct calculations
+- [ ] Transaction diagnostics shows transaction data
+- [ ] Event approval system works (pending → active)
+- [ ] Admin organizers endpoint shows correct stats
+- [ ] Public events only shows active + future
+- [ ] Organizer events shows all statuses
+- [ ] Event stats calculations are correct
+- [ ] All numeric values are numbers (not null)
+- [ ] Console logs show detailed information
+- [ ] No errors in Vercel logs
+
