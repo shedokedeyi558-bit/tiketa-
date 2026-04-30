@@ -750,20 +750,21 @@ export const getAdminOrganizers = async (req, res) => {
           .eq('organizer_id', org.id)
           .eq('status', 'success');
 
-        const { data: wallet } = await supabase
+        const { data: walletRows } = await supabase
           .from('wallets')
           .select('balance, available_balance')
-          .or(`organizer_id.eq.${org.id},user_id.eq.${org.id}`)
-          .single();
+          .eq('organizer_id', org.id);
 
-        const { data: lastEventData } = await supabase
+        const wallet = walletRows?.[0] || null;
+
+        const { data: lastEventRows } = await supabase
           .from('events')
           .select('created_at, start_date, title')
           .eq('organizer_id', org.id)
           .order('created_at', { ascending: false })
           .limit(1);
 
-        const lastEvent = lastEventData?.[0] || null;
+        const lastEvent = lastEventRows?.[0] || null;
 
         const totalEarned = (txData || []).reduce(
           (sum, t) => sum + Number(t.organizer_earnings || 0),
