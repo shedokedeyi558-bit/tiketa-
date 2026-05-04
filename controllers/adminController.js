@@ -129,7 +129,7 @@ export const getPendingEvents = async (req, res) => {
 
     const { data: events, error: eventsError } = await supabase
       .from('events')
-      .select('*, users:organizer_id(full_name, email)')
+      .select('*')
       .eq('status', 'pending')
       .order('created_at', { ascending: false });
 
@@ -140,13 +140,26 @@ export const getPendingEvents = async (req, res) => {
 
     console.log(`✅ Fetched ${events?.length || 0} pending events`);
 
+    // ✅ Manual organizer lookup for pending events
+    const pendingOrgIds = [...new Set((events || []).map(e => e.organizer_id).filter(Boolean))];
+    let pendingOrgMap = {};
+    if (pendingOrgIds.length > 0) {
+      const { data: orgs } = await supabase
+        .from('profiles')
+        .select('id, full_name, email')
+        .in('id', pendingOrgIds);
+      (orgs || []).forEach(o => {
+        pendingOrgMap[o.id] = o;
+      });
+    }
+
     const enriched = (events || []).map((event) => ({
       id: event.id,
       title: event.title,
       description: event.description,
       organizer_id: event.organizer_id,
-      organizer_name: event.users?.full_name || 'Unknown',
-      organizer_email: event.users?.email || '',
+      organizer_name: pendingOrgMap[event.organizer_id]?.full_name || pendingOrgMap[event.organizer_id]?.email?.split('@')[0] || 'Unknown',
+      organizer_email: pendingOrgMap[event.organizer_id]?.email || '',
       date: event.date,
       end_date: event.end_date,
       location: event.location,
@@ -181,7 +194,7 @@ export const approveEvent = async (req, res) => {
     // Get event details before updating
     const { data: event, error: fetchError } = await supabase
       .from('events')
-      .select('*, users:organizer_id(full_name, email)')
+      .select('*')
       .eq('id', id)
       .single();
 
@@ -192,6 +205,13 @@ export const approveEvent = async (req, res) => {
         message: 'Event not found',
       });
     }
+
+    // ✅ Fetch organizer details manually
+    const { data: approveOrg } = await supabase
+      .from('profiles')
+      .select('full_name, email')
+      .eq('id', event.organizer_id)
+      .single();
 
     // Update event status to active
     const { data: updatedEvent, error: updateError } = await supabase
@@ -212,8 +232,8 @@ export const approveEvent = async (req, res) => {
     try {
       const { sendEventApprovedEmail } = await import('../services/emailService.js');
       await sendEventApprovedEmail(
-        event.users?.email || '',
-        event.users?.full_name || 'Organizer',
+        approveOrg?.email || '',
+        approveOrg?.full_name || 'Organizer',
         event.title
       );
       console.log('✅ Approval email sent to organizer');
@@ -247,7 +267,7 @@ export const rejectEvent = async (req, res) => {
     // Get event details before updating
     const { data: event, error: fetchError } = await supabase
       .from('events')
-      .select('*, users:organizer_id(full_name, email)')
+      .select('*')
       .eq('id', id)
       .single();
 
@@ -258,6 +278,13 @@ export const rejectEvent = async (req, res) => {
         message: 'Event not found',
       });
     }
+
+    // ✅ Fetch organizer details manually
+    const { data: rejectOrg } = await supabase
+      .from('profiles')
+      .select('full_name, email')
+      .eq('id', event.organizer_id)
+      .single();
 
     // Update event status to rejected
     const { data: updatedEvent, error: updateError } = await supabase
@@ -282,8 +309,8 @@ export const rejectEvent = async (req, res) => {
     try {
       const { sendEventRejectedEmail } = await import('../services/emailService.js');
       await sendEventRejectedEmail(
-        event.users?.email || '',
-        event.users?.full_name || 'Organizer',
+        rejectOrg?.email || '',
+        rejectOrg?.full_name || 'Organizer',
         event.title,
         rejection_reason || 'No reason provided'
       );
@@ -1122,6 +1149,61 @@ export const getRevenueAnalytics = async (req, res) => {
     return res.status(500).json({
       success: false,
       error: 'Failed to fetch revenue analytics',
+      message: error.message,
+    });
+  }
+};
+
+
+// ✅ Get single event details by ID
+export const getAdminEventById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Fetch event details
+    const { data: event, error } = await supabase
+      .from('events')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error || !event) {
+      return res.status(404).json({
+        success: false,
+        message: 'Event not found',
+      });
+    }
+
+    // Fetch organizer details
+    const { data: org } = await supabase
+      .from('profiles')
+      .select('full_name, email')
+      .eq('id', event.organizer_id)
+      .single();
+
+    // Fetch transaction data for revenue and tickets sold
+    const { data: txData } = await supabase
+      .from('transactions')
+      .select('ticket_price, organizer_earnings')
+      .eq('event_id', id)
+      .eq('status', 'success');
+
+    const tickets_sold = (txData || []).length;
+    const revenue = (txData || []).reduce((sum, t) => sum + Number(t.ticket_price || 0), 0);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        ...event,
+        organizer_name: org?.full_name || org?.email?.split('@')[0] || 'Unknown',
+        organizer_email: org?.email || '',
+        tickets_sold,
+        revenue,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
       message: error.message,
     });
   }

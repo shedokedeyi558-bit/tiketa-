@@ -13,6 +13,7 @@ import {
   approveEvent,
   rejectEvent,
   getTransactionDiagnostics,
+  getAdminEventById,
 } from '../controllers/adminController.js';
 import {
   getWithdrawalsController,
@@ -30,6 +31,7 @@ router.use(adminAuth);
 
 // Events management
 router.get('/events', getAdminEvents);
+router.get('/events/:id', getAdminEventById); // ✅ Get single event details
 router.get('/events/pending', getPendingEvents); // ✅ Get pending events
 router.post('/events', createAdminEvent);
 router.post('/events/:id/approve', approveEvent); // ✅ Approve event
