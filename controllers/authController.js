@@ -61,6 +61,12 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
 
     // ✅ CRITICAL: Write to profiles table using service role
     console.log('📝 Creating profile record...');
+    console.log('📝 Profile data:', {
+      id: authData.user.id,
+      email,
+      full_name: fullName,
+      role,
+    });
     const { data: userProfile, error: userError } = await supabaseAdmin
       .from('profiles')
       .upsert({
@@ -78,6 +84,8 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
       console.error('❌ Profile record creation failed:', {
         error: userError.message,
         code: userError.code,
+        details: userError.details,
+        hint: userError.hint,
       });
       return res.status(400).json({
         success: false,
