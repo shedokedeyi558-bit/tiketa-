@@ -79,7 +79,11 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
         error: userError.message,
         code: userError.code,
       });
-      return errorResponse(res, userError, 'Failed to create profile record', 400);
+      return res.status(400).json({
+        success: false,
+        message: userError.message,
+        detail: userError,
+      });
     }
 
     console.log('✅ Profile record created:', userProfile.id);
