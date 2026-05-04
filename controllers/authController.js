@@ -44,7 +44,8 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
         data: {
           full_name: fullName,
           role: role,
-        }
+        },
+        emailRedirectTo: undefined  // remove any redirect that might interfere
       }
     });
 
@@ -58,6 +59,18 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
     }
 
     console.log('✅ Auth user created:', authData.user.id);
+
+    // ✅ Manual fallback: Upsert to profiles in case trigger fails
+    console.log('📝 Manual profile upsert as fallback...');
+    await supabaseAdmin
+      .from('profiles')
+      .upsert({
+        id: authData.user.id,
+        email: authData.user.email,
+        full_name: fullName,
+        role: role,
+      }, { onConflict: 'id' });
+    console.log('✅ Manual profile upsert completed');
 
     // ✅ CRITICAL: Write to profiles table using service role
     console.log('📝 Creating profile record...');
