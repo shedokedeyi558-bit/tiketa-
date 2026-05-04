@@ -5,10 +5,10 @@ export const getAdminEvents = async (req, res) => {
   try {
     console.log('📅 Fetching all events for admin...');
 
-    // ✅ Fetch all events with organizer info using join
+    // ✅ Fetch all events
     const { data: events, error: eventsError } = await supabase
       .from('events')
-      .select('*, profiles:organizer_id(full_name, email)')
+      .select('*')
       .order('date', { ascending: false });
 
     if (eventsError) {
@@ -16,7 +16,21 @@ export const getAdminEvents = async (req, res) => {
       throw eventsError;
     }
 
-    console.log(`✅ Fetched ${events?.length || 0} events with organizer info`);
+    console.log(`✅ Fetched ${events?.length || 0} events`);
+
+    // ✅ Manual organizer lookup - fetch organizer info for all events
+    const organizerIds = [...new Set((events || []).map(e => e.organizer_id).filter(Boolean))];
+    let organizerMap = {};
+    if (organizerIds.length > 0) {
+      const { data: organizers } = await supabase
+        .from('profiles')
+        .select('id, full_name, email')
+        .in('id', organizerIds);
+      (organizers || []).forEach(o => {
+        organizerMap[o.id] = o;
+      });
+    }
+    console.log(`✅ Fetched organizer info for ${Object.keys(organizerMap).length} organizers`);
 
     // ✅ Auto-expire past events - update status in database
     const now = new Date();
@@ -77,8 +91,8 @@ export const getAdminEvents = async (req, res) => {
         id: event.id,
         title: event.title,
         organizer_id: event.organizer_id,
-        organizer_name: event.profiles?.full_name || event.profiles?.email?.split('@')[0] || 'Unknown',
-        organizer_email: event.profiles?.email || '',
+        organizer_name: organizerMap[event.organizer_id]?.full_name || organizerMap[event.organizer_id]?.email?.split('@')[0] || 'Unknown',
+        organizer_email: organizerMap[event.organizer_id]?.email || '',
         date: event.date,
         location: event.location,
         status: event.status, // ✅ Now includes auto-expired events
@@ -595,12 +609,10 @@ export const getDashboardStats = async (req, res) => {
     // Query 4: Active events (with error handling)
     try {
       console.log('⏳ Querying active events from events table...');
-      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
       const activeEventsResult = await supabase
         .from('events')
         .select('id', { count: 'exact', head: true })
-        .eq('status', 'active')
-        .gte('date', today); // ✅ Only count events with future dates
+        .eq('status', 'active');
       
       if (activeEventsResult.error) {
         console.error('❌ Active events query error:', {
