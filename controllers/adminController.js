@@ -493,6 +493,10 @@ export const getDashboardStats = async (req, res) => {
       successfulPayments: 0,
       pendingPayments: 0,
       platformCommission: 0,
+      totalProcessingFees: 0,
+      squadcoCharges: 0,
+      organizerEarnings: 0,
+      platformNetProfit: 0,
       activeEvents: 0,
       organizers: 0,
       pendingWithdrawals: 0,
@@ -544,7 +548,7 @@ export const getDashboardStats = async (req, res) => {
       console.log('⏳ Querying all transactions from transactions table...');
       const transactionsResult = await supabase
         .from('transactions')
-        .select('total_amount, platform_commission, status');
+        .select('ticket_price, total_amount, processing_fee, platform_commission, organizer_earnings, status');
       
       if (transactionsResult.error) {
         console.error('❌ Transactions query error:', {
@@ -561,8 +565,12 @@ export const getDashboardStats = async (req, res) => {
         stats.totalOrders = Number(transactionsResult.data.length || 0);
         stats.successfulPayments = Number(successTransactions.length || 0);
         stats.pendingPayments = Number(pendingTransactions.length || 0); // ✅ Ensure it's always a number
-        stats.totalRevenue = Number(successTransactions.reduce((sum, t) => sum + Number(t.total_amount || 0), 0) || 0);
+        stats.totalRevenue = Number(successTransactions.reduce((sum, t) => sum + Number(t.ticket_price || 0), 0) || 0);
         stats.platformCommission = Number(successTransactions.reduce((sum, t) => sum + Number(t.platform_commission || 0), 0) || 0);
+        stats.totalProcessingFees = Number(successTransactions.reduce((sum, t) => sum + Number(t.processing_fee || 0), 0) || 0);
+        stats.squadcoCharges = Number(successTransactions.reduce((sum, t) => sum + Number(t.total_amount || 0), 0) * 0.012 || 0);
+        stats.organizerEarnings = Number(successTransactions.reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0) || 0);
+        stats.platformNetProfit = stats.totalProcessingFees - stats.squadcoCharges + stats.platformCommission;
 
         console.log('✅ Transactions stats:', {
           total: stats.totalOrders,
@@ -570,6 +578,10 @@ export const getDashboardStats = async (req, res) => {
           pending: stats.pendingPayments,
           revenue: stats.totalRevenue,
           commission: stats.platformCommission,
+          processingFees: stats.totalProcessingFees,
+          squadcoCharges: stats.squadcoCharges,
+          organizerEarnings: stats.organizerEarnings,
+          platformNetProfit: stats.platformNetProfit,
         });
       }
     } catch (err) {
@@ -688,6 +700,10 @@ export const getDashboardStats = async (req, res) => {
         successfulPayments: 0,
         pendingPayments: 0,
         platformCommission: 0,
+        totalProcessingFees: 0,
+        squadcoCharges: 0,
+        organizerEarnings: 0,
+        platformNetProfit: 0,
         activeEvents: 0,
         organizers: 0,
         pendingWithdrawals: 0,
