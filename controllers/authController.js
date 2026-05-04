@@ -50,7 +50,11 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
 
     if (authError) {
       console.error('❌ Auth signup failed:', authError);
-      return errorResponse(res, authError, 'Signup failed', 400);
+      return res.status(400).json({
+        success: false,
+        message: authError.message,
+        detail: authError,
+      });
     }
 
     console.log('✅ Auth user created:', authData.user.id);
