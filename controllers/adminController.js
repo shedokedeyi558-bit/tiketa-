@@ -8,7 +8,7 @@ export const getAdminEvents = async (req, res) => {
     // ✅ Fetch all events with organizer info using join
     const { data: events, error: eventsError } = await supabase
       .from('events')
-      .select('*, users:organizer_id(full_name, email)')
+      .select('*, profiles:organizer_id(full_name, email)')
       .order('date', { ascending: false });
 
     if (eventsError) {
@@ -51,7 +51,7 @@ export const getAdminEvents = async (req, res) => {
     // Fetch all successful transactions for revenue calculation
     const { data: transactions, error: txError } = await supabase
       .from('transactions')
-      .select('event_id, total_amount, organizer_earnings')
+      .select('event_id, ticket_price, total_amount, organizer_earnings')
       .eq('status', 'success');
 
     if (txError) {
@@ -62,10 +62,11 @@ export const getAdminEvents = async (req, res) => {
     const txMap = {};
     (transactions || []).forEach(tx => {
       if (!txMap[tx.event_id]) {
-        txMap[tx.event_id] = { revenue: 0, organizer_earnings: 0 };
+        txMap[tx.event_id] = { revenue: 0, organizer_earnings: 0, tickets_sold: 0 };
       }
-      txMap[tx.event_id].revenue += Number(tx.total_amount || 0);
+      txMap[tx.event_id].revenue += Number(tx.ticket_price || 0);
       txMap[tx.event_id].organizer_earnings += Number(tx.organizer_earnings || 0);
+      txMap[tx.event_id].tickets_sold += 1;
     });
 
     // Enrich events with revenue data
@@ -76,13 +77,13 @@ export const getAdminEvents = async (req, res) => {
         id: event.id,
         title: event.title,
         organizer_id: event.organizer_id,
-        organizer_name: event.users?.full_name || 'Unknown',
-        organizer_email: event.users?.email || '',
+        organizer_name: event.profiles?.full_name || event.profiles?.email?.split('@')[0] || 'Unknown',
+        organizer_email: event.profiles?.email || '',
         date: event.date,
         location: event.location,
         status: event.status, // ✅ Now includes auto-expired events
         status_badge: event.status.charAt(0).toUpperCase() + event.status.slice(1), // Capitalize first letter
-        tickets_sold: event.tickets_sold || 0,
+        tickets_sold: txMap[event.id]?.tickets_sold || 0,
         total_tickets: event.total_tickets || 0,
         revenue: eventTx.revenue,
         organizer_earnings: eventTx.organizer_earnings,
