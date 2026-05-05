@@ -1225,3 +1225,129 @@ export const getAdminEventById = async (req, res) => {
     });
   }
 };
+
+
+// ✅ Get full organizer details by ID
+export const getAdminOrganizerById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: organizer, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', id)
+      .eq('role', 'organizer')
+      .single();
+
+    if (error || !organizer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Organizer not found',
+      });
+    }
+
+    const { data: events } = await supabase
+      .from('events')
+      .select('id, title, date, status, total_tickets')
+      .eq('organizer_id', id)
+      .order('created_at', { ascending: false });
+
+    const { data: transactions } = await supabase
+      .from('transactions')
+      .select('ticket_price, organizer_earnings, created_at, status')
+      .eq('organizer_id', id)
+      .eq('status', 'success');
+
+    const { data: wallet } = await supabase
+      .from('wallets')
+      .select('available_balance, pending_balance, total_earned')
+      .eq('organizer_id', id);
+
+    const { data: withdrawals } = await supabase
+      .from('withdrawals')
+      .select('amount, status, created_at')
+      .eq('organizer_id', id)
+      .order('created_at', { ascending: false });
+
+    const totalRevenue = (transactions || []).reduce((sum, t) => sum + Number(t.ticket_price || 0), 0);
+    const totalEarnings = (transactions || []).reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0);
+    const ticketsSold = (transactions || []).length;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        ...organizer,
+        events: events || [],
+        transactions: transactions || [],
+        wallet: wallet?.[0] || null,
+        withdrawals: withdrawals || [],
+        stats: {
+          total_events: (events || []).length,
+          tickets_sold: ticketsSold,
+          total_revenue: totalRevenue,
+          total_earnings: totalEarnings,
+        },
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// ✅ Suspend an organizer
+export const suspendOrganizer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        status: 'suspended',
+        suspension_reason: reason || 'Suspended by admin',
+      })
+      .eq('id', id);
+
+    if (error) throw error;
+
+    return res.status(200).json({
+      success: true,
+      message: 'Organizer suspended successfully',
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// ✅ Unsuspend an organizer
+export const unsuspendOrganizer = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        status: 'active',
+        suspension_reason: null,
+      })
+      .eq('id', id);
+
+    if (error) throw error;
+
+    return res.status(200).json({
+      success: true,
+      message: 'Organizer unsuspended successfully',
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};

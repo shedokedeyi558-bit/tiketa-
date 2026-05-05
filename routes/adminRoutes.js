@@ -14,6 +14,9 @@ import {
   rejectEvent,
   getTransactionDiagnostics,
   getAdminEventById,
+  getAdminOrganizerById,
+  suspendOrganizer,
+  unsuspendOrganizer,
 } from '../controllers/adminController.js';
 import {
   getWithdrawalsController,
@@ -44,6 +47,9 @@ router.get('/orders', getAdminOrders);
 
 // Organizers management
 router.get('/organizers', getAdminOrganizers);
+router.get('/organizers/:id', getAdminOrganizerById); // ✅ Get organizer details
+router.post('/organizers/:id/suspend', suspendOrganizer); // ✅ Suspend organizer
+router.post('/organizers/:id/unsuspend', unsuspendOrganizer); // ✅ Unsuspend organizer
 
 // Dashboard stats
 router.get('/stats', getDashboardStats);
