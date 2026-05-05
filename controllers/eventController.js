@@ -228,9 +228,9 @@ export const getEventById = async (req, res) => {
       });
     }
 
-    console.log('📖 Fetching event details for ID:', id);
+    console.log('📖 Fetching public event details for ID:', id);
 
-    // Fetch event from database
+    // ✅ Fetch event from database - NO AUTH REQUIRED
     const { data: event, error: eventError } = await supabase
       .from('events')
       .select('*')
@@ -242,13 +242,33 @@ export const getEventById = async (req, res) => {
       return res.status(404).json({
         success: false,
         error: 'Event not found',
-        message: eventError.message,
+        message: 'This event does not exist or is no longer available',
       });
     }
 
     console.log('✅ Event found:', event.title);
 
-    // 🔑 CRITICAL: Calculate tickets remaining with proper logic
+    // ✅ Check if event should be visible to public
+    // Hide cancelled and rejected events - show active, pending, and ended
+    if (event.status === 'cancelled' || event.status === 'rejected') {
+      console.warn('⚠️ Event is not publicly visible:', event.status);
+      return res.status(404).json({
+        success: false,
+        error: 'Event not found',
+        message: 'This event is no longer available',
+      });
+    }
+
+    // ✅ Fetch organizer details
+    const { data: organizer } = await supabase
+      .from('profiles')
+      .select('full_name, email')
+      .eq('id', event.organizer_id)
+      .single();
+
+    const organizer_name = organizer?.full_name || organizer?.email?.split('@')[0] || 'Unknown Organizer';
+
+    // ✅ Calculate tickets remaining with proper logic
     const totalTickets = event.total_tickets;
     const ticketsSold = event.tickets_sold || 0;
 
@@ -272,28 +292,67 @@ export const getEventById = async (req, res) => {
       });
     }
 
-    // Build response with calculated values
+    // ✅ Extract time from date if available
+    let event_time = null;
+    if (event.date) {
+      try {
+        const dateObj = new Date(event.date);
+        event_time = dateObj.toLocaleTimeString('en-US', { 
+          hour: '2-digit', 
+          minute: '2-digit',
+          hour12: true 
+        });
+      } catch (e) {
+        console.warn('⚠️ Could not parse event time');
+      }
+    }
+
+    // ✅ Build comprehensive response for public page
     const eventData = {
+      // Event Identification
       id: event.id,
       title: event.title,
-      description: event.description,
+      category: event.category || 'General',
+      
+      // Event Description
+      description: event.description || '',
+      
+      // Date & Time
       date: event.date,
       end_date: event.end_date,
+      time: event_time,
+      
+      // Location
       location: event.location,
-      organizer_id: event.organizer_id,
-      status: event.status,
+      
+      // Ticket Information
+      ticket_price: event.ticket_price || 0,
       total_tickets: displayTotalTickets,
       tickets_sold: ticketsSold,
       tickets_remaining: displayTicketsRemaining,
+      
+      // Organizer Information
+      organizer_id: event.organizer_id,
+      organizer_name: organizer_name,
+      
+      // Media
+      image_url: event.image_url || null,
+      flyer_url: event.flyer_url || null,
+      
+      // Status
+      status: event.status,
+      
+      // Metadata
       created_at: event.created_at,
       updated_at: event.updated_at,
     };
 
-    console.log('✅ Event details compiled:', {
+    console.log('✅ Public event details compiled:', {
       title: eventData.title,
+      status: eventData.status,
       total_tickets: eventData.total_tickets,
       tickets_sold: eventData.tickets_sold,
-      tickets_remaining: eventData.tickets_remaining,
+      organizer: eventData.organizer_name,
     });
 
     return res.status(200).json({
