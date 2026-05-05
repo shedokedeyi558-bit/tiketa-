@@ -34,9 +34,12 @@ export const getAdminEvents = async (req, res) => {
 
     // ✅ Auto-expire past events - update status in database
     const now = new Date();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
     const pastActiveEvents = (events || []).filter(event => {
       const eventDate = new Date(event.date);
-      return eventDate < now && event.status === 'active';
+      return eventDate < today && event.status === 'active';
     });
 
     if (pastActiveEvents.length > 0) {
