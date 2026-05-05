@@ -5,13 +5,13 @@ import { supabase } from '../utils/supabaseClient.js';
  * Single source of truth for all organizer event queries
  * 
  * Query Parameters:
- * - status: 'all' | 'active' | 'cancelled' | 'completed' (default: 'active')
+ * - status: 'all' | 'active' | 'cancelled' | 'completed' (default: 'all')
  * - dateFilter: 'all' | 'upcoming' | 'past' (default: 'upcoming')
  * - sortBy: 'date' | 'title' (default: 'date')
  * - sortOrder: 'asc' | 'desc' (default: 'asc')
  * 
  * Examples:
- * GET /api/v1/events/organizer → Upcoming active events (default)
+ * GET /api/v1/events/organizer → All organizer events (default)
  * GET /api/v1/events/organizer?status=all → All events
  * GET /api/v1/events/organizer?dateFilter=all → All active events (past + future)
  * GET /api/v1/events/organizer?status=all&dateFilter=all → All events (no filters)
@@ -21,7 +21,7 @@ export const getOrganizerEvents = async (req, res) => {
     const userId = req.user.id;
     
     // ✅ Parse query parameters with defaults
-    const status = req.query.status || 'active'; // 'all', 'active', 'cancelled', 'completed'
+    const status = req.query.status || 'all'; // 'all', 'active', 'cancelled', 'completed' - default to 'all' to show pending events
     const dateFilter = req.query.dateFilter || 'upcoming'; // 'all', 'upcoming', 'past'
     const sortBy = req.query.sortBy || 'date'; // 'date', 'title'
     const sortOrder = req.query.sortOrder === 'desc' ? false : true; // true = asc, false = desc
@@ -506,7 +506,7 @@ export const createEvent = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: 'Event created successfully',
+      message: 'Your event has been submitted for review. It will go live once approved by our team.',
       data: {
         id: event.id,
         title: event.title,
