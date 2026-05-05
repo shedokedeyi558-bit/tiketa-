@@ -247,20 +247,6 @@ export const getEventById = async (req, res) => {
     }
 
     console.log('✅ Event found:', event.title);
-    
-    // 🔍 DEBUG: Log raw event row to see all columns
-    console.log('📋 RAW EVENT ROW FROM DATABASE:', JSON.stringify(event, null, 2));
-    console.log('📋 EVENT COLUMNS:', Object.keys(event));
-    console.log('📋 IMAGE/MEDIA COLUMNS:', {
-      image_url: event.image_url,
-      flyer_url: event.flyer_url,
-      banner_url: event.banner_url,
-      cover_image: event.cover_image,
-      media_url: event.media_url,
-      image: event.image,
-      flyer: event.flyer,
-      banner: event.banner,
-    });
 
     // ✅ Check if event should be visible to public
     // Hide cancelled and rejected events - show active, pending, and ended
@@ -334,58 +320,8 @@ export const getEventById = async (req, res) => {
       }
     }
 
-    // ✅ Determine which media URL to use (prefer flyer_url, fallback to image_url)
-    const media_url = event.flyer_url || event.image_url || null;
-    
-    console.log('📸 Media URLs:', {
-      flyer_url: event.flyer_url,
-      image_url: event.image_url,
-      selected: media_url,
-    });
-
-    // 🔍 DEBUG: Check if there's a separate event_media table
-    console.log('🔍 Checking for separate event_media table...');
-    let mediaFromTable = null;
-    try {
-      const { data: eventMedia, error: mediaError } = await supabase
-        .from('event_media')
-        .select('*')
-        .eq('event_id', id)
-        .limit(1);
-      
-      if (!mediaError && eventMedia && eventMedia.length > 0) {
-        console.log('✅ Found event_media table with data:', JSON.stringify(eventMedia[0], null, 2));
-        mediaFromTable = eventMedia[0];
-      } else if (mediaError) {
-        console.log('⚠️ event_media table not found or error:', mediaError.message);
-      } else {
-        console.log('⚠️ event_media table exists but no media for this event');
-      }
-    } catch (e) {
-      console.log('⚠️ Could not query event_media table:', e.message);
-    }
-
-    // 🔍 DEBUG: Check if there's a separate event_images table
-    console.log('🔍 Checking for separate event_images table...');
-    let imagesFromTable = null;
-    try {
-      const { data: eventImages, error: imagesError } = await supabase
-        .from('event_images')
-        .select('*')
-        .eq('event_id', id)
-        .limit(1);
-      
-      if (!imagesError && eventImages && eventImages.length > 0) {
-        console.log('✅ Found event_images table with data:', JSON.stringify(eventImages[0], null, 2));
-        imagesFromTable = eventImages[0];
-      } else if (imagesError) {
-        console.log('⚠️ event_images table not found or error:', imagesError.message);
-      } else {
-        console.log('⚠️ event_images table exists but no images for this event');
-      }
-    } catch (e) {
-      console.log('⚠️ Could not query event_images table:', e.message);
-    }
+    // ✅ Use image_url for the event flyer/poster
+    const image_url = event.image_url || null;
 
     // ✅ Build comprehensive response for public page
     const eventData = {
@@ -416,9 +352,7 @@ export const getEventById = async (req, res) => {
       organizer_name: organizer_name,
       
       // Media
-      image_url: event.image_url || null,
-      flyer_url: event.flyer_url || null,
-      media_url: media_url, // ✅ Preferred media URL (flyer first, then image)
+      image_url: image_url,
       
       // Status
       status: event.status,

@@ -1273,7 +1273,6 @@ export const getAdminEventById = async (req, res) => {
         
         // Media
         image_url: event.image_url || null,
-        flyer_url: event.flyer_url || null,
         
         // Metadata
         created_at: event.created_at,
