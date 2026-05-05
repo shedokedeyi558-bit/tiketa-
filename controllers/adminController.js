@@ -601,8 +601,15 @@ export const getDashboardStats = async (req, res) => {
       } else if (transactionsResult.data) {
         console.log('📊 Transactions fetched:', transactionsResult.data.length);
         
+        // ✅ DEBUG: Log all unique status values
+        const uniqueStatuses = [...new Set(transactionsResult.data.map(t => t.status))];
+        console.log('📊 Unique transaction statuses:', uniqueStatuses);
+        
         const successTransactions = transactionsResult.data.filter(t => t.status === 'success') || [];
         const pendingTransactions = transactionsResult.data.filter(t => t.status === 'pending') || [];
+
+        console.log('📊 Success transactions:', successTransactions.length);
+        console.log('📊 Pending transactions:', pendingTransactions.length);
 
         stats.totalOrders = Number(transactionsResult.data.length || 0);
         stats.successfulPayments = Number(successTransactions.length || 0);
