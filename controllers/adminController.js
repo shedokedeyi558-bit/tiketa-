@@ -1177,7 +1177,9 @@ export const getAdminEventById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Fetch event details
+    console.log('📋 Fetching event details for admin:', id);
+
+    // ✅ Fetch event details
     const { data: event, error } = await supabase
       .from('events')
       .select('*')
@@ -1185,40 +1187,101 @@ export const getAdminEventById = async (req, res) => {
       .single();
 
     if (error || !event) {
+      console.error('❌ Event not found:', id);
       return res.status(404).json({
         success: false,
         message: 'Event not found',
       });
     }
 
-    // Fetch organizer details
+    console.log('✅ Event found:', event.title);
+
+    // ✅ Fetch organizer details
     const { data: org } = await supabase
       .from('profiles')
       .select('full_name, email')
       .eq('id', event.organizer_id)
       .single();
 
-    // Fetch transaction data for revenue and tickets sold
+    const organizer_name = org?.full_name || org?.email?.split('@')[0] || 'Unknown';
+    const organizer_email = org?.email || '';
+
+    console.log('✅ Organizer found:', organizer_name);
+
+    // ✅ Fetch transaction data for revenue and tickets sold
     const { data: txData } = await supabase
       .from('transactions')
-      .select('ticket_price, organizer_earnings')
+      .select('ticket_price, organizer_earnings, status')
       .eq('event_id', id)
       .eq('status', 'success');
 
     const tickets_sold = (txData || []).length;
-    const revenue = (txData || []).reduce((sum, t) => sum + Number(t.ticket_price || 0), 0);
+    const total_revenue = (txData || []).reduce((sum, t) => sum + Number(t.ticket_price || 0), 0);
+    const organizer_earnings = (txData || []).reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0);
 
+    console.log('✅ Transaction data fetched:', { tickets_sold, total_revenue });
+
+    // ✅ Extract time from date if available
+    let event_time = null;
+    if (event.date) {
+      try {
+        const dateObj = new Date(event.date);
+        event_time = dateObj.toLocaleTimeString('en-US', { 
+          hour: '2-digit', 
+          minute: '2-digit',
+          hour12: true 
+        });
+      } catch (e) {
+        console.warn('⚠️ Could not parse event time');
+      }
+    }
+
+    // ✅ Build comprehensive response
     return res.status(200).json({
       success: true,
       data: {
-        ...event,
-        organizer_name: org?.full_name || org?.email?.split('@')[0] || 'Unknown',
-        organizer_email: org?.email || '',
-        tickets_sold,
-        revenue,
+        // Event Details
+        event_id: event.id,
+        title: event.title,
+        description: event.description || '',
+        date: event.date,
+        end_date: event.end_date,
+        time: event_time,
+        location: event.location,
+        category: event.category || 'General',
+        
+        // Ticket Information
+        ticket_price: event.ticket_price || 0,
+        total_tickets: event.total_tickets || 0,
+        tickets_sold: tickets_sold,
+        tickets_remaining: Math.max(0, (event.total_tickets || 0) - tickets_sold),
+        
+        // Revenue Information
+        total_revenue: total_revenue,
+        organizer_earnings: organizer_earnings,
+        platform_commission: total_revenue - organizer_earnings,
+        
+        // Organizer Information
+        organizer_id: event.organizer_id,
+        organizer_name: organizer_name,
+        organizer_email: organizer_email,
+        organizer_phone: org?.phone || null, // Note: phone field may not exist in profiles table
+        
+        // Event Status
+        status: event.status,
+        rejection_reason: event.rejection_reason || null,
+        
+        // Media
+        image_url: event.image_url || null,
+        flyer_url: event.flyer_url || null,
+        
+        // Metadata
+        created_at: event.created_at,
+        updated_at: event.updated_at,
       },
     });
   } catch (error) {
+    console.error('❌ Error fetching event details:', error);
     return res.status(500).json({
       success: false,
       message: error.message,
