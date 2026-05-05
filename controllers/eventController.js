@@ -297,15 +297,37 @@ export const getEventById = async (req, res) => {
     if (event.date) {
       try {
         const dateObj = new Date(event.date);
-        event_time = dateObj.toLocaleTimeString('en-US', { 
-          hour: '2-digit', 
-          minute: '2-digit',
-          hour12: true 
-        });
+        
+        // Check if the date string contains time information
+        // If it's just a date (YYYY-MM-DD), the time will be 00:00:00 UTC
+        const timeString = event.date.toString();
+        const hasTimeInfo = timeString.includes('T') || timeString.includes(':');
+        
+        if (hasTimeInfo) {
+          // Full timestamp - extract time
+          event_time = dateObj.toLocaleTimeString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            hour12: true 
+          });
+        } else {
+          // Date-only string - time is not available
+          event_time = null;
+          console.warn('⚠️ Event date is date-only (no time info):', event.date);
+        }
       } catch (e) {
-        console.warn('⚠️ Could not parse event time');
+        console.warn('⚠️ Could not parse event time:', e.message);
       }
     }
+
+    // ✅ Determine which media URL to use (prefer flyer_url, fallback to image_url)
+    const media_url = event.flyer_url || event.image_url || null;
+    
+    console.log('📸 Media URLs:', {
+      flyer_url: event.flyer_url,
+      image_url: event.image_url,
+      selected: media_url,
+    });
 
     // ✅ Build comprehensive response for public page
     const eventData = {
@@ -338,6 +360,7 @@ export const getEventById = async (req, res) => {
       // Media
       image_url: event.image_url || null,
       flyer_url: event.flyer_url || null,
+      media_url: media_url, // ✅ Preferred media URL (flyer first, then image)
       
       // Status
       status: event.status,
