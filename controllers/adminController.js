@@ -592,6 +592,13 @@ export const getDashboardStats = async (req, res) => {
         .from('transactions')
         .select('ticket_price, total_amount, processing_fee, platform_commission, organizer_earnings, status');
       
+      console.log('TRANSACTIONS QUERY RESULT:', JSON.stringify({
+        error: transactionsResult.error,
+        count: transactionsResult.data?.length,
+        firstItem: transactionsResult.data?.[0],
+        statuses: transactionsResult.data?.map(t => t.status)
+      }));
+      
       if (transactionsResult.error) {
         console.error('❌ Transactions query error:', {
           message: transactionsResult.error.message,
