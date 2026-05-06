@@ -409,7 +409,7 @@ export const getEventById = async (req, res) => {
 export const createEvent = async (req, res) => {
   try {
     const organizerId = req.user?.id;
-    const { title, description, date, end_date, location, total_tickets, category, image_url } = req.body;
+    const { title, description, date, end_date, location, total_tickets, category, image_url, image_base64 } = req.body;
 
     // ✅ CRITICAL: Validate organizer is authenticated
     if (!organizerId) {
@@ -435,6 +435,7 @@ export const createEvent = async (req, res) => {
       organizerId,
       title,
       date,
+      hasImage: !!(image_url || image_base64),
     });
 
     // ✅ CRITICAL: Safety check - ensure organizer exists in users table
@@ -524,6 +525,37 @@ export const createEvent = async (req, res) => {
       console.log('✅ Organizer wallet verified');
     }
 
+    // ✅ Handle image upload if provided
+    let finalImageUrl = image_url || null;
+    
+    if (image_base64) {
+      console.log('📸 Processing image upload...');
+      try {
+        const { uploadEventImage } = await import('../services/imageUploadService.js');
+        
+        // ✅ Convert base64 to buffer
+        const base64Data = image_base64.replace(/^data:image\/\w+;base64,/, '');
+        const imageBuffer = Buffer.from(base64Data, 'base64');
+        
+        // ✅ Generate file name from title
+        const fileName = `${title.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}.jpg`;
+        
+        // ✅ Upload to Supabase Storage
+        const uploadResult = await uploadEventImage(imageBuffer, fileName, organizerId);
+        
+        if (uploadResult.success) {
+          finalImageUrl = uploadResult.url;
+          console.log('✅ Image uploaded successfully:', finalImageUrl);
+        } else {
+          console.warn('⚠️ Image upload failed:', uploadResult.error);
+          // Don't fail event creation if image upload fails
+        }
+      } catch (imageError) {
+        console.error('⚠️ Error processing image:', imageError.message);
+        // Don't fail event creation if image processing fails
+      }
+    }
+
     // ✅ Create event with validated organizer_id - status set to 'pending' for admin approval
     console.log('📝 Inserting event into database...');
     const { data: event, error: eventError } = await supabase
@@ -540,7 +572,7 @@ export const createEvent = async (req, res) => {
           tickets_sold: 0,
           status: 'pending', // ✅ Set to pending - requires admin approval
           category: category || 'General',
-          image_url: image_url || null,
+          image_url: finalImageUrl, // ✅ Use uploaded image URL or provided URL
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
@@ -576,6 +608,7 @@ export const createEvent = async (req, res) => {
       id: event.id,
       title: event.title,
       organizer_id: event.organizer_id,
+      image_url: event.image_url,
     });
 
     return res.status(201).json({
@@ -590,6 +623,7 @@ export const createEvent = async (req, res) => {
         status: event.status,
         total_tickets: event.total_tickets,
         tickets_remaining: event.total_tickets,
+        image_url: event.image_url,
       },
     });
   } catch (error) {
