@@ -1,4 +1,11 @@
 import { supabase } from '../utils/supabaseClient.js';
+import { createClient } from '@supabase/supabase-js';
+
+// ✅ Create admin client with service role key for admin operations
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 // Get all events (admin view with stats)
 export const getAdminEvents = async (req, res) => {
@@ -1179,10 +1186,11 @@ export const getAdminEventById = async (req, res) => {
 
     console.log('📋 Fetching event details for admin:', id);
 
-    // ✅ Fetch event details
-    const { data: event, error } = await supabase
+    // ✅ Use service role key to fetch event (can read all events regardless of status)
+    // ✅ Explicitly select start_time and end_time from database
+    const { data: event, error } = await supabaseAdmin
       .from('events')
-      .select('*')
+      .select('*, start_time, end_time')
       .eq('id', id)
       .single();
 
@@ -1195,9 +1203,16 @@ export const getAdminEventById = async (req, res) => {
     }
 
     console.log('✅ Event found:', event.title);
+    console.log('🕐 Raw event data from DB:', {
+      id: event.id,
+      title: event.title,
+      date: event.date,
+      start_time: event.start_time,
+      end_time: event.end_time,
+    });
 
-    // ✅ Fetch organizer details
-    const { data: org } = await supabase
+    // ✅ Fetch organizer details using service role
+    const { data: org } = await supabaseAdmin
       .from('profiles')
       .select('full_name, email')
       .eq('id', event.organizer_id)
@@ -1208,8 +1223,8 @@ export const getAdminEventById = async (req, res) => {
 
     console.log('✅ Organizer found:', organizer_name);
 
-    // ✅ Fetch transaction data for revenue and tickets sold
-    const { data: txData } = await supabase
+    // ✅ Fetch transaction data for revenue and tickets sold using service role
+    const { data: txData } = await supabaseAdmin
       .from('transactions')
       .select('ticket_price, organizer_earnings, status')
       .eq('event_id', id)
@@ -1221,62 +1236,45 @@ export const getAdminEventById = async (req, res) => {
 
     console.log('✅ Transaction data fetched:', { tickets_sold, total_revenue });
 
-    // ✅ Extract time from date if available
-    let event_time = null;
-    if (event.date) {
-      try {
-        const dateObj = new Date(event.date);
-        event_time = dateObj.toLocaleTimeString('en-US', { 
-          hour: '2-digit', 
-          minute: '2-digit',
-          hour12: true 
-        });
-      } catch (e) {
-        console.warn('⚠️ Could not parse event time');
-      }
-    }
-
-    // ✅ Build comprehensive response
+    // ✅ Build comprehensive response with all required fields
+    // ✅ Use start_time and end_time directly from database
     return res.status(200).json({
       success: true,
       data: {
-        // Event Details
-        event_id: event.id,
+        // Event Identification
+        id: event.id,
         title: event.title,
         description: event.description || '',
-        date: event.date,
-        end_date: event.end_date,
-        time: event_time,
-        location: event.location,
         category: event.category || 'General',
+        
+        // Date & Time
+        date: event.date,
+        start_time: event.start_time || null,  // ✅ From database
+        end_time: event.end_time || null,      // ✅ From database
+        location: event.location,
         
         // Ticket Information
         ticket_price: event.ticket_price || 0,
         total_tickets: event.total_tickets || 0,
         tickets_sold: tickets_sold,
-        tickets_remaining: Math.max(0, (event.total_tickets || 0) - tickets_sold),
         
         // Revenue Information
-        total_revenue: total_revenue,
-        organizer_earnings: organizer_earnings,
-        platform_commission: total_revenue - organizer_earnings,
+        revenue: total_revenue,
         
         // Organizer Information
         organizer_id: event.organizer_id,
         organizer_name: organizer_name,
         organizer_email: organizer_email,
-        organizer_phone: org?.phone || null, // Note: phone field may not exist in profiles table
+        
+        // Media
+        image_url: event.image_url || null,
         
         // Event Status
         status: event.status,
         rejection_reason: event.rejection_reason || null,
         
-        // Media
-        image_url: event.image_url || null,
-        
         // Metadata
         created_at: event.created_at,
-        updated_at: event.updated_at,
       },
     });
   } catch (error) {

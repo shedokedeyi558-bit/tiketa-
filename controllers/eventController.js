@@ -231,9 +231,10 @@ export const getEventById = async (req, res) => {
     console.log('📖 Fetching public event details for ID:', id);
 
     // ✅ Fetch event from database - NO AUTH REQUIRED
+    // ✅ Explicitly select start_time and end_time from database
     const { data: event, error: eventError } = await supabase
       .from('events')
-      .select('*')
+      .select('*, start_time, end_time')
       .eq('id', id)
       .single();
 
@@ -247,6 +248,13 @@ export const getEventById = async (req, res) => {
     }
 
     console.log('✅ Event found:', event.title);
+    console.log('🕐 Raw event data from DB:', {
+      id: event.id,
+      title: event.title,
+      date: event.date,
+      start_time: event.start_time,
+      end_time: event.end_time,
+    });
 
     // ✅ Check if event should be visible to public
     // Hide cancelled and rejected events - show active, pending, and ended
@@ -292,38 +300,11 @@ export const getEventById = async (req, res) => {
       });
     }
 
-    // ✅ Extract time from date if available
-    let event_time = null;
-    if (event.date) {
-      try {
-        const dateObj = new Date(event.date);
-        
-        // Check if the date string contains time information
-        // If it's just a date (YYYY-MM-DD), the time will be 00:00:00 UTC
-        const timeString = event.date.toString();
-        const hasTimeInfo = timeString.includes('T') || timeString.includes(':');
-        
-        if (hasTimeInfo) {
-          // Full timestamp - extract time
-          event_time = dateObj.toLocaleTimeString('en-US', { 
-            hour: '2-digit', 
-            minute: '2-digit',
-            hour12: true 
-          });
-        } else {
-          // Date-only string - time is not available
-          event_time = null;
-          console.warn('⚠️ Event date is date-only (no time info):', event.date);
-        }
-      } catch (e) {
-        console.warn('⚠️ Could not parse event time:', e.message);
-      }
-    }
-
     // ✅ Use image_url for the event flyer/poster
     const image_url = event.image_url || null;
 
     // ✅ Build comprehensive response for public page
+    // ✅ Use start_time and end_time directly from database
     const eventData = {
       // Event Identification
       id: event.id,
@@ -336,7 +317,8 @@ export const getEventById = async (req, res) => {
       // Date & Time
       date: event.date,
       end_date: event.end_date,
-      time: event_time,
+      start_time: event.start_time || null,  // ✅ From database
+      end_time: event.end_time || null,      // ✅ From database
       
       // Location
       location: event.location,
@@ -368,6 +350,8 @@ export const getEventById = async (req, res) => {
       total_tickets: eventData.total_tickets,
       tickets_sold: eventData.tickets_sold,
       organizer: eventData.organizer_name,
+      start_time: eventData.start_time,
+      end_time: eventData.end_time,
     });
 
     return res.status(200).json({
@@ -409,6 +393,20 @@ export const getEventById = async (req, res) => {
 export const createEvent = async (req, res) => {
   try {
     const organizerId = req.user?.id;
+    
+    // 🔍 DEBUG: Log the complete request body to see what frontend is sending
+    console.log('📋 FULL REQUEST BODY RECEIVED:', JSON.stringify(req.body, null, 2));
+    console.log('📋 REQUEST BODY KEYS:', Object.keys(req.body));
+    console.log('📋 IMAGE-RELATED FIELDS:', {
+      image_url: req.body.image_url,
+      image_base64: req.body.image_base64,
+      imageUrl: req.body.imageUrl,
+      flyer_url: req.body.flyer_url,
+      flyerUrl: req.body.flyerUrl,
+      media_url: req.body.media_url,
+      mediaUrl: req.body.mediaUrl,
+    });
+    
     const { title, description, date, end_date, location, total_tickets, category, image_url, image_base64 } = req.body;
 
     // ✅ CRITICAL: Validate organizer is authenticated
@@ -558,6 +556,21 @@ export const createEvent = async (req, res) => {
 
     // ✅ Create event with validated organizer_id - status set to 'pending' for admin approval
     console.log('📝 Inserting event into database...');
+    console.log('📝 IMAGE_URL VALUE BEING SAVED:', finalImageUrl);
+    console.log('📝 EVENT DATA BEING INSERTED:', {
+      title,
+      description: description || '',
+      date,
+      end_date: end_date || date,
+      location,
+      organizer_id: organizerId,
+      total_tickets: total_tickets || 0,
+      tickets_sold: 0,
+      status: 'pending',
+      category: category || 'General',
+      image_url: finalImageUrl,
+    });
+    
     const { data: event, error: eventError } = await supabase
       .from('events')
       .insert([
