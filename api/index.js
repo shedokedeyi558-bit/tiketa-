@@ -23,6 +23,7 @@ console.log('   - SUPABASE_URL:', process.env.SUPABASE_URL?.substring(0, 20) + '
 // Import routes
 import authRoutes from '../routes/authRoutes.js';
 import eventRoutes from '../routes/eventRoutes.js';
+import organizerRoutes from '../routes/organizerRoutes.js';
 import userRoutes from '../routes/userRoutes.js';
 import ticketRoutes from '../routes/ticketRoutes.js';
 import ticketValidationRoutes from '../routes/ticketValidationRoutes.js';
@@ -103,6 +104,7 @@ app.use((req, res, next) => {
 const apiVersion = process.env.API_VERSION || 'v1';
 app.use(`/api/${apiVersion}/auth`, authRoutes);
 app.use(`/api/${apiVersion}/events`, eventRoutes);
+app.use(`/api/${apiVersion}/organizer`, organizerRoutes);
 app.use(`/api/${apiVersion}/users`, userRoutes);
 app.use(`/api/${apiVersion}/tickets`, ticketRoutes);
 app.use(`/api/${apiVersion}/tickets/validate`, ticketValidationRoutes);
