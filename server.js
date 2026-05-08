@@ -31,6 +31,7 @@ const __dirname = path.dirname(__filename);
 // Import routes
 import authRoutes from './routes/authRoutes.js';
 import eventRoutes from './routes/eventRoutes.js';
+import organizerRoutes from './routes/organizerRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import ticketRoutes from './routes/ticketRoutes.js';
 import ticketValidationRoutes from './routes/ticketValidationRoutes.js';
@@ -110,6 +111,7 @@ app.use((req, res, next) => {
 // API Routes
 app.use(`/api/${process.env.API_VERSION}/auth`, authRoutes);
 app.use(`/api/${process.env.API_VERSION}/events`, eventRoutes);
+app.use(`/api/${process.env.API_VERSION}/organizer`, organizerRoutes);
 app.use(`/api/${process.env.API_VERSION}/users`, userRoutes);
 app.use(`/api/${process.env.API_VERSION}/tickets`, ticketRoutes);
 app.use(`/api/${process.env.API_VERSION}/tickets/validate`, ticketValidationRoutes);
@@ -119,6 +121,26 @@ app.use(`/api/${process.env.API_VERSION}/wallet`, walletRoutes);
 app.use(`/api/${process.env.API_VERSION}/withdrawals`, withdrawalRoutes);
 app.use(`/api/${process.env.API_VERSION}/orders`, orderRoutes);
 app.use(`/api/${process.env.API_VERSION}/admin`, adminRoutes);
+
+// DEBUG: Log all registered routes
+console.log('🔍 REGISTERED ROUTES:');
+app._router.stack.forEach(function(r){
+  if (r.route && r.route.path){
+    console.log(`   ${r.route.stack[0].method.toUpperCase()} ${r.route.path}`);
+  } else if (r.name === 'router') {
+    const basePath = r.regexp.source.replace(/\\\//g, '/').replace(/\$.*/, '').replace(/^\^/, '');
+    console.log(`   ROUTER: ${basePath}`);
+    if (r.handle && r.handle.stack) {
+      r.handle.stack.forEach(function(nestedRoute){
+        if (nestedRoute.route){
+          const method = nestedRoute.route.stack[0].method.toUpperCase();
+          const path = nestedRoute.route.path;
+          console.log(`     ${method} ${basePath}${path}`);
+        }
+      });
+    }
+  }
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
