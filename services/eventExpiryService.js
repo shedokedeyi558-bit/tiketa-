@@ -22,10 +22,17 @@ export const updateExpiredEvents = async () => {
     console.log('⏰ Checking for expired events...');
 
     // ✅ Get current time in Nigeria timezone (UTC+1)
+    // Create a date in UTC, then convert to Nigeria time (UTC+1)
     const now = new Date();
-    const nigeriaTime = new Date(now.getTime() + (1 * 60 * 60 * 1000)); // UTC+1
     
-    console.log('🕐 Current Nigeria time:', nigeriaTime.toISOString());
+    // Get the UTC offset in milliseconds
+    const utcTime = now.getTime();
+    
+    // Nigeria is UTC+1, so add 1 hour (3600000 ms)
+    const nigeriaTime = new Date(utcTime + (1 * 60 * 60 * 1000));
+    
+    console.log('🕐 Current UTC time:', now.toISOString());
+    console.log('🕐 Current Nigeria time (UTC+1):', nigeriaTime.toISOString());
 
     // ✅ Fetch all active events
     const { data: activeEvents, error: fetchError } = await supabaseAdmin
@@ -57,19 +64,28 @@ export const updateExpiredEvents = async () => {
 
     for (const event of activeEvents) {
       try {
-        // Parse event date and start_time
-        const eventDate = new Date(event.date);
+        // ✅ Parse event date (YYYY-MM-DD format)
+        const eventDateParts = event.date.split('-');
+        const eventYear = parseInt(eventDateParts[0], 10);
+        const eventMonth = parseInt(eventDateParts[1], 10) - 1; // Month is 0-indexed
+        const eventDay = parseInt(eventDateParts[2], 10);
         
-        // If start_time exists, combine date + start_time
-        let eventDateTime = eventDate;
+        // ✅ Parse event start_time (HH:MM:SS format)
+        let eventHours = 0;
+        let eventMinutes = 0;
+        let eventSeconds = 0;
         
         if (event.start_time) {
-          // start_time is in HH:MM:SS format
-          const [hours, minutes, seconds] = event.start_time.split(':').map(Number);
-          eventDateTime = new Date(eventDate);
-          eventDateTime.setHours(hours, minutes, seconds || 0, 0);
+          const timeParts = event.start_time.split(':');
+          eventHours = parseInt(timeParts[0], 10);
+          eventMinutes = parseInt(timeParts[1], 10);
+          eventSeconds = parseInt(timeParts[2], 10);
         }
-
+        
+        // ✅ Create event datetime in Nigeria timezone
+        // Create a date object with the event date and time
+        const eventDateTime = new Date(eventYear, eventMonth, eventDay, eventHours, eventMinutes, eventSeconds, 0);
+        
         console.log(`📍 Event: ${event.title}`, {
           date: event.date,
           start_time: event.start_time,
@@ -79,9 +95,12 @@ export const updateExpiredEvents = async () => {
         });
 
         // ✅ Check if event has expired
+        // Event is expired ONLY if: event datetime < current Nigeria datetime
         if (eventDateTime < nigeriaTime) {
           console.log(`⏳ Event expired: ${event.title} (${event.id})`);
           expiredEventIds.push(event.id);
+        } else {
+          console.log(`✅ Event NOT expired (future event): ${event.title}`);
         }
       } catch (e) {
         console.warn(`⚠️ Error parsing event ${event.id}:`, e.message);
