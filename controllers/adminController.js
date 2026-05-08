@@ -1,5 +1,6 @@
 import { supabase } from '../utils/supabaseClient.js';
 import { createClient } from '@supabase/supabase-js';
+import { updateExpiredEvents } from '../services/eventExpiryService.js';
 
 // ✅ Create admin client with service role key for admin operations
 const supabaseAdmin = createClient(
@@ -11,6 +12,10 @@ const supabaseAdmin = createClient(
 export const getAdminEvents = async (req, res) => {
   try {
     console.log('📅 Fetching all events for admin...');
+
+    // ✅ Check for expired events and update them to 'ended' status
+    const expiryResult = await updateExpiredEvents();
+    console.log('⏰ Expiry check result:', expiryResult);
 
     // ✅ Fetch all events
     const { data: events, error: eventsError } = await supabase

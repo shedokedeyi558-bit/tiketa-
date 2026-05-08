@@ -1,4 +1,5 @@
 import { supabase } from '../utils/supabaseClient.js';
+import { updateExpiredEvents, deleteEventIfNoSales } from '../services/eventExpiryService.js';
 
 /**
  * ✅ UNIFIED ORGANIZER EVENTS ENDPOINT
@@ -129,6 +130,10 @@ export const getOrganizerEvents = async (req, res) => {
 export const getAllEvents = async (req, res) => {
   try {
     console.log('📖 Fetching all public events');
+
+    // ✅ Check for expired events and update them to 'ended' status
+    const expiryResult = await updateExpiredEvents();
+    console.log('⏰ Expiry check result:', expiryResult);
 
     // ✅ Parse query parameters - default to upcoming events only
     const dateFilter = req.query.dateFilter || 'upcoming'; // 'all', 'upcoming', 'past' - default upcoming
@@ -892,6 +897,68 @@ export const deleteEvent = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Delete Event Controller Error:', {
+      message: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString(),
+    });
+
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * ✅ DELETE /api/v1/organizer/events/:id
+ * Delete event - only owner can delete, only if no tickets sold
+ * 
+ * Conditions:
+ * - User must be the event owner (organizer_id = user.id)
+ * - Event must have no ticket sales (tickets_sold = 0)
+ * - No transactions must exist for this event
+ */
+export const deleteOrganizerEvent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Event ID is required',
+      });
+    }
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+        message: 'You must be logged in to delete an event',
+      });
+    }
+
+    console.log('🗑️ Organizer attempting to delete event:', { eventId: id, userId });
+
+    // ✅ Use the helper function from eventExpiryService
+    const result = await deleteEventIfNoSales(id, userId);
+
+    if (!result.success) {
+      const statusCode = result.error === 'You can only delete your own events' ? 403 : 400;
+      return res.status(statusCode).json({
+        success: false,
+        error: result.message,
+        message: result.error,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: result.message,
+    });
+  } catch (error) {
+    console.error('❌ Delete Organizer Event Error:', {
       message: error.message,
       stack: error.stack,
       timestamp: new Date().toISOString(),
