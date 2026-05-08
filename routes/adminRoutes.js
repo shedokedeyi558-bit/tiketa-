@@ -26,6 +26,10 @@ import {
   getRecentOrganizersController,
   getRecentTicketsController,
 } from '../controllers/adminPayoutController.js';
+import {
+  getPlatformSettings,
+  updatePlatformSettings,
+} from '../controllers/platformSettingsController.js';
 
 const router = express.Router();
 
@@ -77,5 +81,9 @@ router.patch('/payouts/:id/reject', rejectWithdrawalController);
 router.options('/payouts/:id/pay', (req, res) => res.sendStatus(200));
 router.post('/payouts/:id/pay', payWithdrawalController);
 router.patch('/payouts/:id/pay', payWithdrawalController);
+
+// Platform settings management
+router.get('/settings', getPlatformSettings); // ✅ Get platform settings (public read)
+router.put('/settings', updatePlatformSettings); // ✅ Update platform settings (admin only)
 
 export default router;
