@@ -707,7 +707,7 @@ export const getDashboardStats = async (req, res) => {
       console.log('⏳ Querying all transactions from transactions table...');
       const transactionsResult = await supabase
         .from('transactions')
-        .select('ticket_price, total_amount, processing_fee, platform_commission, organizer_earnings, status');
+        .select('ticket_price, total_amount, processing_fee, platform_commission, squadco_fee, organizer_earnings, status');
       
       console.log('TRANSACTIONS QUERY RESULT:', JSON.stringify({
         error: transactionsResult.error,
@@ -741,7 +741,7 @@ export const getDashboardStats = async (req, res) => {
         stats.totalRevenue = Number(successTransactions.reduce((sum, t) => sum + Number(t.ticket_price || 0), 0) || 0);
         stats.platformCommission = Number(successTransactions.reduce((sum, t) => sum + Number(t.platform_commission || 0), 0) || 0);
         stats.totalProcessingFees = Number(successTransactions.reduce((sum, t) => sum + Number(t.processing_fee || 0), 0) || 0);
-        stats.squadcoCharges = Number((successTransactions.reduce((sum, t) => sum + Number(t.total_amount || 0), 0) * 0.012).toFixed(2) || 0);
+        stats.squadcoCharges = Number(successTransactions.reduce((sum, t) => sum + Number(t.squadco_fee || 0), 0) || 0);
         stats.organizerEarnings = Number(successTransactions.reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0) || 0);
         stats.platformNetProfit = Number((stats.totalProcessingFees + stats.platformCommission - stats.squadcoCharges).toFixed(2));
 
@@ -1040,7 +1040,7 @@ export const getRevenueAnalytics = async (req, res) => {
     console.log('🔍 Querying transactions table with status = "success"...');
     const { data: transactions, error: txError } = await supabase
       .from('transactions')
-      .select('event_id, organizer_id, ticket_price, platform_commission, organizer_earnings, total_amount, processing_fee, created_at')
+      .select('event_id, organizer_id, ticket_price, platform_commission, organizer_earnings, total_amount, processing_fee, squadco_fee, created_at')
       .eq('status', 'success')
       .order('created_at', { ascending: true });
 
@@ -1086,7 +1086,7 @@ export const getRevenueAnalytics = async (req, res) => {
     
     const totalProcessingFees = (transactions || []).reduce((sum, t) => sum + Number(t.processing_fee || 0), 0);
     const totalAmountCollected = (transactions || []).reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
-    const totalSquadcoCharges = Number((totalAmountCollected * 0.012).toFixed(2)); // 1.2% of total_amount
+    const totalSquadcoCharges = Number((transactions || []).reduce((sum, t) => sum + Number(t.squadco_fee || 0), 0).toFixed(2)); // Sum of squadco_fee column
     const totalPlatformCommission = (transactions || []).reduce((sum, t) => sum + Number(t.platform_commission || 0), 0);
     const totalOrganizerEarnings = (transactions || []).reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0);
     const totalPlatformNetProfit = Number((totalProcessingFees + totalPlatformCommission - totalSquadcoCharges).toFixed(2));
@@ -1124,7 +1124,7 @@ export const getRevenueAnalytics = async (req, res) => {
       const ticketPrice = Number(t.ticket_price || 0);
       const processingFee = Number(t.processing_fee || 0);
       const totalAmount = Number(t.total_amount || 0);
-      const squadcoCharge = Number((totalAmount * 0.012).toFixed(2));
+      const squadcoCharge = Number(t.squadco_fee || 0);
       const commission = Number(t.platform_commission || 0);
       
       monthlyData[month].ticketRevenue += ticketPrice;
@@ -1168,7 +1168,7 @@ export const getRevenueAnalytics = async (req, res) => {
         const ticketRevenue = eventTxns.reduce((sum, t) => sum + Number(t.ticket_price || 0), 0);
         const processingFees = eventTxns.reduce((sum, t) => sum + Number(t.processing_fee || 0), 0);
         const totalAmount = eventTxns.reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
-        const squadcoCharges = Number((totalAmount * 0.012).toFixed(2));
+        const squadcoCharges = Number((eventTxns.reduce((sum, t) => sum + Number(t.squadco_fee || 0), 0)).toFixed(2));
         const platformCommission = eventTxns.reduce((sum, t) => sum + Number(t.platform_commission || 0), 0);
         const organizerEarnings = eventTxns.reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0);
         const platformNetProfit = Number((processingFees + platformCommission - squadcoCharges).toFixed(2));
@@ -1217,7 +1217,7 @@ export const getRevenueAnalytics = async (req, res) => {
         const ticketRevenue = organizerTxns.reduce((sum, t) => sum + Number(t.ticket_price || 0), 0);
         const processingFees = organizerTxns.reduce((sum, t) => sum + Number(t.processing_fee || 0), 0);
         const totalAmount = organizerTxns.reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
-        const squadcoCharges = Number((totalAmount * 0.012).toFixed(2));
+        const squadcoCharges = Number((organizerTxns.reduce((sum, t) => sum + Number(t.squadco_fee || 0), 0)).toFixed(2));
         const platformCommission = organizerTxns.reduce((sum, t) => sum + Number(t.platform_commission || 0), 0);
         const organizerEarnings = organizerTxns.reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0);
         const platformNetProfit = Number((processingFees + platformCommission - squadcoCharges).toFixed(2));
