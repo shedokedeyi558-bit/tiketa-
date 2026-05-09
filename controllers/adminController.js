@@ -537,6 +537,108 @@ export const getAdminOrders = async (req, res) => {
   }
 };
 
+/**
+ * ✅ GET /api/v1/admin/sales-feed
+ * Returns all transactions with calculated platform profit per transaction
+ * 
+ * Formula per transaction:
+ * - squadco_fee = (total_amount * 1.2) / 100
+ * - platform_profit = processing_fee + platform_commission - squadco_fee
+ */
+export const getSalesFeed = async (req, res) => {
+  try {
+    console.log('📊 Fetching sales feed with transaction details...');
+
+    // Fetch all successful transactions
+    const { data: transactions, error: txError } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('status', 'success')
+      .order('created_at', { ascending: false });
+
+    if (txError) {
+      console.error('❌ Error fetching transactions:', txError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to fetch transactions',
+        error: txError.message,
+      });
+    }
+
+    console.log(`✅ Found ${transactions?.length || 0} successful transactions`);
+
+    // Calculate platform profit for each transaction
+    const transactionsWithProfit = (transactions || []).map(t => {
+      const totalAmount = Number(t.total_amount || 0);
+      const processingFee = Number(t.processing_fee || 0);
+      const platformCommission = Number(t.platform_commission || 0);
+      
+      // Calculate squadco fee: 1.2% of total_amount
+      const squadcoFee = Number(((totalAmount * 1.2) / 100).toFixed(2));
+      
+      // Calculate platform profit: processing_fee + platform_commission - squadco_fee
+      const platformProfit = Number((processingFee + platformCommission - squadcoFee).toFixed(2));
+
+      return {
+        id: t.id,
+        reference: t.reference,
+        event_id: t.event_id,
+        organizer_id: t.organizer_id,
+        buyer_name: t.buyer_name,
+        buyer_email: t.buyer_email,
+        ticket_price: Number(t.ticket_price || 0),
+        processing_fee: processingFee,
+        total_amount: totalAmount,
+        platform_commission: platformCommission,
+        squadco_fee: squadcoFee,
+        platform_profit: platformProfit,
+        organizer_earnings: Number(t.organizer_earnings || 0),
+        status: t.status,
+        created_at: t.created_at,
+      };
+    });
+
+    // Calculate summary statistics
+    const totalRevenue = transactionsWithProfit.reduce((sum, t) => sum + t.ticket_price, 0);
+    const totalProcessingFees = transactionsWithProfit.reduce((sum, t) => sum + t.processing_fee, 0);
+    const totalPlatformCommission = transactionsWithProfit.reduce((sum, t) => sum + t.platform_commission, 0);
+    const totalSquadcoFees = transactionsWithProfit.reduce((sum, t) => sum + t.squadco_fee, 0);
+    const totalPlatformProfit = transactionsWithProfit.reduce((sum, t) => sum + t.platform_profit, 0);
+    const totalOrganizerEarnings = transactionsWithProfit.reduce((sum, t) => sum + t.organizer_earnings, 0);
+
+    console.log('✅ Sales feed calculated:', {
+      transactionCount: transactionsWithProfit.length,
+      totalRevenue: Number(totalRevenue.toFixed(2)),
+      totalProcessingFees: Number(totalProcessingFees.toFixed(2)),
+      totalPlatformCommission: Number(totalPlatformCommission.toFixed(2)),
+      totalSquadcoFees: Number(totalSquadcoFees.toFixed(2)),
+      totalPlatformProfit: Number(totalPlatformProfit.toFixed(2)),
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Sales feed fetched successfully',
+      data: transactionsWithProfit,
+      summary: {
+        total_transactions: transactionsWithProfit.length,
+        total_revenue: Number(totalRevenue.toFixed(2)),
+        total_processing_fees: Number(totalProcessingFees.toFixed(2)),
+        total_platform_commission: Number(totalPlatformCommission.toFixed(2)),
+        total_squadco_fees: Number(totalSquadcoFees.toFixed(2)),
+        total_platform_profit: Number(totalPlatformProfit.toFixed(2)),
+        total_organizer_earnings: Number(totalOrganizerEarnings.toFixed(2)),
+      },
+    });
+  } catch (error) {
+    console.error('❌ Sales feed error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message,
+    });
+  }
+};
+
 // Get dashboard stats - Fetch all stats with detailed logging
 export const getDashboardStats = async (req, res) => {
   try {

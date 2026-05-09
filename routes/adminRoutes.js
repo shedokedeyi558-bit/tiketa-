@@ -6,6 +6,7 @@ import {
   updateAdminEvent,
   deleteAdminEvent,
   getAdminOrders,
+  getSalesFeed,
   getDashboardStats,
   getRevenueAnalytics,
   getAdminOrganizers,
@@ -48,6 +49,9 @@ router.delete('/events/:id', deleteAdminEvent);
 
 // Orders management
 router.get('/orders', getAdminOrders);
+
+// Sales feed (transactions with platform profit)
+router.get('/sales-feed', getSalesFeed);
 
 // Organizers management
 router.get('/organizers', getAdminOrganizers);
