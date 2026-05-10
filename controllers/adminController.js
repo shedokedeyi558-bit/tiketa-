@@ -786,14 +786,18 @@ export const getDashboardStats = async (req, res) => {
         }
 
         // ✅ Build recent transactions with event names
-        stats.recentTransactions = recentSuccessTransactions.map(t => ({
-          id: t.id,
-          buyer_name: t.buyer_name || 'Unknown',
-          event_name: eventMap[t.event_id] || 'Unknown Event',
-          event_id: t.event_id,
-          amount: Number(t.ticket_price || 0),
-          created_at: t.created_at,
-        }));
+        stats.recentTransactions = recentSuccessTransactions.map(t => {
+          const displayName = t.buyer_name || t.buyer_email || 'Unknown';
+          console.log(`📋 Transaction ${t.id.substring(0, 8)}... - Buyer: ${displayName} (buyer_name: ${t.buyer_name}, buyer_email: ${t.buyer_email})`);
+          return {
+            id: t.id,
+            buyer_name: displayName,
+            event_name: eventMap[t.event_id] || 'Unknown Event',
+            event_id: t.event_id,
+            amount: Number(t.ticket_price || 0),
+            created_at: t.created_at,
+          };
+        });
 
         console.log('✅ Transactions stats:', {
           successful: stats.successfulPayments,
