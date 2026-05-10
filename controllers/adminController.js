@@ -599,7 +599,7 @@ export const getSalesFeed = async (req, res) => {
     });
 
     // Calculate summary statistics
-    const totalRevenue = transactionsWithProfit.reduce((sum, t) => sum + t.ticket_price, 0);
+    const totalRevenue = transactionsWithProfit.reduce((sum, t) => sum + t.total_amount, 0);
     const totalProcessingFees = transactionsWithProfit.reduce((sum, t) => sum + t.processing_fee, 0);
     const totalPlatformCommission = transactionsWithProfit.reduce((sum, t) => sum + t.platform_commission, 0);
     const totalSquadcoFees = transactionsWithProfit.reduce((sum, t) => sum + t.squadco_fee, 0);
@@ -748,7 +748,7 @@ export const getDashboardStats = async (req, res) => {
         stats.ticketsSold = Number(successTransactions.length || 0);
         stats.successfulPayments = Number(successTransactions.length || 0);
         stats.pendingPayments = Number(pendingTransactions.length || 0);
-        stats.totalRevenue = Number(successTransactions.reduce((sum, t) => sum + Number(t.ticket_price || 0), 0) || 0);
+        stats.totalRevenue = Number(successTransactions.reduce((sum, t) => sum + Number(t.total_amount || 0), 0) || 0);
         stats.platformCommission = Number(successTransactions.reduce((sum, t) => sum + Number(t.platform_commission || 0), 0) || 0);
         stats.totalProcessingFees = Number(successTransactions.reduce((sum, t) => sum + Number(t.processing_fee || 0), 0) || 0);
         stats.squadcoCharges = Number(successTransactions.reduce((sum, t) => sum + Number(t.squadco_fee || 0), 0) || 0);
@@ -1499,7 +1499,7 @@ export const getAdminOrganizerById = async (req, res) => {
       .eq('organizer_id', id)
       .order('created_at', { ascending: false });
 
-    const totalRevenue = (transactions || []).reduce((sum, t) => sum + Number(t.ticket_price || 0), 0);
+    const totalRevenue = (transactions || []).reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
     const totalEarnings = (transactions || []).reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0);
     const ticketsSold = (transactions || []).length;
 
