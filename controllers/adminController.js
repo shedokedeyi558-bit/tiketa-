@@ -647,18 +647,20 @@ export const getDashboardStats = async (req, res) => {
     // Default stats - ensure all values are numbers, never null/undefined
     const stats = {
       totalEvents: 0,
-      totalOrders: 0,
+      ticketsSold: 0,
       totalRevenue: 0,
+      platformNetProfit: 0,
       successfulPayments: 0,
       pendingPayments: 0,
       platformCommission: 0,
       totalProcessingFees: 0,
       squadcoCharges: 0,
       organizerEarnings: 0,
-      platformNetProfit: 0,
       activeEvents: 0,
       organizers: 0,
       pendingWithdrawals: 0,
+      pendingEventApprovals: 0,
+      recentTransactions: [],
     };
 
     // Query 1: Total events (with error handling)
@@ -707,7 +709,8 @@ export const getDashboardStats = async (req, res) => {
       console.log('⏳ Querying all transactions from transactions table...');
       const transactionsResult = await supabase
         .from('transactions')
-        .select('ticket_price, total_amount, processing_fee, platform_commission, squadco_fee, organizer_earnings, status');
+        .select('id, ticket_price, total_amount, processing_fee, platform_commission, squadco_fee, organizer_earnings, buyer_name, event_id, status, created_at')
+        .order('created_at', { ascending: false });
       
       console.log('TRANSACTIONS QUERY RESULT:', JSON.stringify({
         error: transactionsResult.error,
@@ -735,15 +738,24 @@ export const getDashboardStats = async (req, res) => {
         console.log('📊 Success transactions:', successTransactions.length);
         console.log('📊 Pending transactions:', pendingTransactions.length);
 
-        stats.totalOrders = Number(transactionsResult.data.length || 0);
+        stats.ticketsSold = Number(successTransactions.length || 0);
         stats.successfulPayments = Number(successTransactions.length || 0);
-        stats.pendingPayments = Number(pendingTransactions.length || 0); // ✅ Ensure it's always a number
+        stats.pendingPayments = Number(pendingTransactions.length || 0);
         stats.totalRevenue = Number(successTransactions.reduce((sum, t) => sum + Number(t.ticket_price || 0), 0) || 0);
         stats.platformCommission = Number(successTransactions.reduce((sum, t) => sum + Number(t.platform_commission || 0), 0) || 0);
         stats.totalProcessingFees = Number(successTransactions.reduce((sum, t) => sum + Number(t.processing_fee || 0), 0) || 0);
         stats.squadcoCharges = Number(successTransactions.reduce((sum, t) => sum + Number(t.squadco_fee || 0), 0) || 0);
         stats.organizerEarnings = Number(successTransactions.reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0) || 0);
         stats.platformNetProfit = Number((stats.totalProcessingFees + stats.platformCommission - stats.squadcoCharges).toFixed(2));
+
+        // ✅ Get last 5 successful transactions for recent transactions
+        stats.recentTransactions = successTransactions.slice(0, 5).map(t => ({
+          id: t.id,
+          buyer_name: t.buyer_name || 'Unknown',
+          event_id: t.event_id,
+          amount: Number(t.ticket_price || 0),
+          created_at: t.created_at,
+        }));
 
         console.log('✅ Transactions stats:', {
           total: stats.totalOrders,
@@ -814,7 +826,32 @@ export const getDashboardStats = async (req, res) => {
       });
     }
 
-    // Query 6: Pending withdrawals (with error handling)
+    // Query 6: Pending event approvals (with error handling)
+    try {
+      console.log('⏳ Querying pending event approvals from events table...');
+      const pendingEventsResult = await supabase
+        .from('events')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending');
+      
+      if (pendingEventsResult.error) {
+        console.error('❌ Pending events query error:', {
+          message: pendingEventsResult.error.message,
+          code: pendingEventsResult.error.code,
+          details: pendingEventsResult.error.details,
+        });
+      } else {
+        stats.pendingEventApprovals = pendingEventsResult.count ?? 0;
+        console.log('✅ Pending event approvals:', stats.pendingEventApprovals);
+      }
+    } catch (err) {
+      console.error('❌ Pending events query exception:', {
+        message: err.message,
+        stack: err.stack,
+      });
+    }
+
+    // Query 7: Pending withdrawals (with error handling)
     try {
       console.log('⏳ Querying pending withdrawals from withdrawals table...');
       const pendingWithdrawalsResult = await supabase
@@ -866,18 +903,20 @@ export const getDashboardStats = async (req, res) => {
       success: true,
       data: {
         totalEvents: 0,
-        totalOrders: 0,
+        ticketsSold: 0,
         totalRevenue: 0,
+        platformNetProfit: 0,
         successfulPayments: 0,
         pendingPayments: 0,
         platformCommission: 0,
         totalProcessingFees: 0,
         squadcoCharges: 0,
         organizerEarnings: 0,
-        platformNetProfit: 0,
         activeEvents: 0,
         organizers: 0,
         pendingWithdrawals: 0,
+        pendingEventApprovals: 0,
+        recentTransactions: [],
       },
       error: error.message,
     });
