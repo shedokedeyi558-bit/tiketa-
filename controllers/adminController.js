@@ -732,6 +732,7 @@ export const getDashboardStats = async (req, res) => {
         });
       } else if (transactionsResult.data && transactionsResult.data.length > 0) {
         console.log('📊 Transactions fetched:', transactionsResult.data.length);
+        console.log('📊 Raw transaction data:', JSON.stringify(transactionsResult.data, null, 2));
         
         // ✅ DEBUG: Log all unique status values
         const uniqueStatuses = [...new Set(transactionsResult.data.map(t => t.status))];
@@ -742,6 +743,7 @@ export const getDashboardStats = async (req, res) => {
 
         console.log('📊 Success transactions:', successTransactions.length);
         console.log('📊 Pending transactions:', pendingTransactions.length);
+        console.log('📊 Success transactions data:', JSON.stringify(successTransactions, null, 2));
 
         stats.ticketsSold = Number(successTransactions.length || 0);
         stats.successfulPayments = Number(successTransactions.length || 0);
