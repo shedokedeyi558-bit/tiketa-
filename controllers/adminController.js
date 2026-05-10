@@ -572,9 +572,7 @@ export const getSalesFeed = async (req, res) => {
       const totalAmount = Number(t.total_amount || 0);
       const processingFee = Number(t.processing_fee || 0);
       const platformCommission = Number(t.platform_commission || 0);
-      
-      // Calculate squadco fee: 1.2% of total_amount
-      const squadcoFee = Number(((totalAmount * 1.2) / 100).toFixed(2));
+      const squadcoFee = Number(t.squadco_fee || 0);
       
       // Calculate platform profit: processing_fee + platform_commission - squadco_fee
       const platformProfit = Number((processingFee + platformCommission - squadcoFee).toFixed(2));
