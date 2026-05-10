@@ -37,7 +37,7 @@ export const updateExpiredEvents = async () => {
     // ✅ Fetch all active events
     const { data: activeEvents, error: fetchError } = await supabaseAdmin
       .from('events')
-      .select('id, title, date, start_time, status')
+      .select('id, title, end_time, status')
       .eq('status', 'active');
 
     if (fetchError) {
@@ -64,43 +64,10 @@ export const updateExpiredEvents = async () => {
 
     for (const event of activeEvents) {
       try {
-        // ✅ Parse event date (YYYY-MM-DD format)
-        const eventDateParts = event.date.split('-');
-        const eventYear = parseInt(eventDateParts[0], 10);
-        const eventMonth = parseInt(eventDateParts[1], 10) - 1; // Month is 0-indexed
-        const eventDay = parseInt(eventDateParts[2], 10);
-        
-        // ✅ Parse event start_time (HH:MM:SS format)
-        let eventHours = 0;
-        let eventMinutes = 0;
-        let eventSeconds = 0;
-        
-        if (event.start_time) {
-          const timeParts = event.start_time.split(':');
-          eventHours = parseInt(timeParts[0], 10);
-          eventMinutes = parseInt(timeParts[1], 10);
-          eventSeconds = parseInt(timeParts[2], 10);
-        }
-        
-        // ✅ Create event datetime in Nigeria timezone
-        // Create a date object with the event date and time
-        const eventDateTime = new Date(eventYear, eventMonth, eventDay, eventHours, eventMinutes, eventSeconds, 0);
-        
-        console.log(`📍 Event: ${event.title}`, {
-          date: event.date,
-          start_time: event.start_time,
-          eventDateTime: eventDateTime.toISOString(),
-          nigeriaTime: nigeriaTime.toISOString(),
-          hasExpired: eventDateTime < nigeriaTime,
-        });
-
-        // ✅ Check if event has expired
-        // Event is expired ONLY if: event datetime < current Nigeria datetime
-        if (eventDateTime < nigeriaTime) {
-          console.log(`⏳ Event expired: ${event.title} (${event.id})`);
+        if (!event.end_time) continue; // skip events with no end time
+        const eventEndTime = new Date(event.end_time);
+        if (eventEndTime < nigeriaTime) {
           expiredEventIds.push(event.id);
-        } else {
-          console.log(`✅ Event NOT expired (future event): ${event.title}`);
         }
       } catch (e) {
         console.warn(`⚠️ Error parsing event ${event.id}:`, e.message);
