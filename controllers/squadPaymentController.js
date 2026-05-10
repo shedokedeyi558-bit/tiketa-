@@ -129,11 +129,13 @@ export const initiatePaymentController = async (req, res) => {
     
     // 🔑 CRITICAL: Calculate fees and commission
     const processingFee = 100; // ₦100 fixed processing fee
+    const squadcoFee = (amount * 1.2) / 100; // 1.2% of total_amount
     const platformCommission = Math.round(ticketPrice * 0.03); // ✅ 3% of ticket_price ONLY
     const organizerEarnings = ticketPrice - platformCommission; // ✅ ticket_price - platform_commission
     
     console.log('💵 FEES CALCULATED:', {
       processingFee,
+      squadcoFee: squadcoFee.toFixed(2),
       platformCommission,
       organizerEarnings,
       total: amount,
@@ -157,7 +159,8 @@ export const initiatePaymentController = async (req, res) => {
             ticket_price: ticketPrice, // ✅ Unit price of ticket
             processing_fee: processingFee, // ✅ Fixed ₦100 fee
             total_amount: amount, // ✅ Total paid by buyer
-            platform_commission: platformCommission, // ✅ 5% platform fee
+            platform_commission: platformCommission, // ✅ 3% platform fee
+            squadco_fee: squadcoFee, // ✅ 1.2% of total_amount
             organizer_earnings: organizerEarnings, // ✅ What organizer receives
             status: 'pending',
             squadco_response: { cartItems, attendees, amount, buyerEmail },

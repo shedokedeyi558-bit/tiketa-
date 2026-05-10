@@ -135,6 +135,7 @@ export const initiatePayment = async (req, res) => {
           processing_fee: processingFee,
           total_amount: totalAmount,
           platform_commission: platformCommission,
+          squadco_fee: squadcoFee,
           organizer_earnings: organizerEarnings,
           status: 'pending',
           squadco_response: { cartItems, attendees }, // Temporarily store payload avoiding DB migrations
