@@ -646,39 +646,44 @@ export const getDashboardStats = async (req, res) => {
 
     // Default stats - ensure all values are numbers, never null/undefined
     const stats = {
-      totalEvents: 0,
+      activeEventsCount: 0,
       ticketsSold: 0,
+      ticketsSoldSubtitle: 'All time',
       totalRevenue: 0,
+      totalRevenueSubtitle: 'All time',
       platformNetProfit: 0,
+      platformNetProfitSubtitle: 'All time',
       successfulPayments: 0,
       pendingPayments: 0,
       platformCommission: 0,
       totalProcessingFees: 0,
       squadcoCharges: 0,
       organizerEarnings: 0,
-      activeEvents: 0,
       organizers: 0,
       pendingWithdrawals: 0,
       pendingEventApprovals: 0,
       recentTransactions: [],
     };
 
-    // Query 1: Total events (with error handling)
+    // Query 1: Active events (with error handling)
     try {
-      console.log('⏳ Querying total events from events table...');
-      const eventsResult = await supabase.from('events').select('id', { count: 'exact', head: true });
+      console.log('⏳ Querying active events from events table...');
+      const eventsResult = await supabase
+        .from('events')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'active');
       if (eventsResult.error) {
-        console.error('❌ Events query error:', {
+        console.error('❌ Active events query error:', {
           message: eventsResult.error.message,
           code: eventsResult.error.code,
           details: eventsResult.error.details,
         });
       } else {
-        stats.totalEvents = eventsResult.count ?? 0;
-        console.log('✅ Total events:', stats.totalEvents);
+        stats.activeEventsCount = eventsResult.count ?? 0;
+        console.log('✅ Active events:', stats.activeEventsCount);
       }
     } catch (err) {
-      console.error('❌ Events query exception:', {
+      console.error('❌ Active events query exception:', {
         message: err.message,
         stack: err.stack,
       });
@@ -704,12 +709,12 @@ export const getDashboardStats = async (req, res) => {
       });
     }
 
-    // Query 3: All transactions (with error handling)
+    // Query 3: All transactions with event details (with error handling)
     try {
       console.log('⏳ Querying all transactions from transactions table...');
       const transactionsResult = await supabase
         .from('transactions')
-        .select('id, ticket_price, total_amount, processing_fee, platform_commission, squadco_fee, organizer_earnings, buyer_name, event_id, status, created_at')
+        .select('id, ticket_price, total_amount, processing_fee, platform_commission, squadco_fee, organizer_earnings, buyer_name, event_id, status, created_at, events(title)')
         .order('created_at', { ascending: false });
       
       console.log('TRANSACTIONS QUERY RESULT:', JSON.stringify({
@@ -748,10 +753,11 @@ export const getDashboardStats = async (req, res) => {
         stats.organizerEarnings = Number(successTransactions.reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0) || 0);
         stats.platformNetProfit = Number((stats.totalProcessingFees + stats.platformCommission - stats.squadcoCharges).toFixed(2));
 
-        // ✅ Get last 5 successful transactions for recent transactions
+        // ✅ Get last 5 successful transactions for recent transactions with event names
         stats.recentTransactions = successTransactions.slice(0, 5).map(t => ({
           id: t.id,
           buyer_name: t.buyer_name || 'Unknown',
+          event_name: t.events?.title || 'Unknown Event',
           event_id: t.event_id,
           amount: Number(t.ticket_price || 0),
           created_at: t.created_at,
@@ -776,32 +782,7 @@ export const getDashboardStats = async (req, res) => {
       });
     }
 
-    // Query 4: Active events (with error handling)
-    try {
-      console.log('⏳ Querying active events from events table...');
-      const activeEventsResult = await supabase
-        .from('events')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'active');
-      
-      if (activeEventsResult.error) {
-        console.error('❌ Active events query error:', {
-          message: activeEventsResult.error.message,
-          code: activeEventsResult.error.code,
-          details: activeEventsResult.error.details,
-        });
-      } else {
-        stats.activeEvents = activeEventsResult.count ?? 0;
-        console.log('✅ Active events:', stats.activeEvents);
-      }
-    } catch (err) {
-      console.error('❌ Active events query exception:', {
-        message: err.message,
-        stack: err.stack,
-      });
-    }
-
-    // Query 5: Organizers count (with error handling)
+    // Query 4: Organizers count (with error handling)
     try {
       console.log('⏳ Querying organizers from profiles table...');
       const organizersResult = await supabase
@@ -826,7 +807,7 @@ export const getDashboardStats = async (req, res) => {
       });
     }
 
-    // Query 6: Pending event approvals (with error handling)
+    // Query 5: Pending event approvals (with error handling)
     try {
       console.log('⏳ Querying pending event approvals from events table...');
       const pendingEventsResult = await supabase
@@ -851,7 +832,7 @@ export const getDashboardStats = async (req, res) => {
       });
     }
 
-    // Query 7: Pending withdrawals (with error handling)
+    // Query 6: Pending withdrawals (with error handling)
     try {
       console.log('⏳ Querying pending withdrawals from withdrawals table...');
       const pendingWithdrawalsResult = await supabase
@@ -902,17 +883,19 @@ export const getDashboardStats = async (req, res) => {
     return res.status(200).json({
       success: true,
       data: {
-        totalEvents: 0,
+        activeEventsCount: 0,
         ticketsSold: 0,
+        ticketsSoldSubtitle: 'All time',
         totalRevenue: 0,
+        totalRevenueSubtitle: 'All time',
         platformNetProfit: 0,
+        platformNetProfitSubtitle: 'All time',
         successfulPayments: 0,
         pendingPayments: 0,
         platformCommission: 0,
         totalProcessingFees: 0,
         squadcoCharges: 0,
         organizerEarnings: 0,
-        activeEvents: 0,
         organizers: 0,
         pendingWithdrawals: 0,
         pendingEventApprovals: 0,
