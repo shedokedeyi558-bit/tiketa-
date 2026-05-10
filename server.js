@@ -108,6 +108,31 @@ app.use((req, res, next) => {
   next();
 });
 
+// DEBUG: Admin transactions endpoint (temporary, no auth required) - MUST be before adminRoutes
+app.get('/api/v1/admin/debug-transactions', async (req, res) => {
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+    
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('id, reference, ticket_price, processing_fee, total_amount, squadco_fee, platform_commission, organizer_earnings, status')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+    
+    return res.status(200).json({
+      success: true,
+      count: data?.length || 0,
+      data: data || []
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // API Routes
 app.use(`/api/${process.env.API_VERSION}/auth`, authRoutes);
 app.use(`/api/${process.env.API_VERSION}/events`, eventRoutes);
@@ -176,31 +201,6 @@ app.get('/debug/env', (req, res) => {
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.path}`);
   next();
-});
-
-// DEBUG: Admin transactions endpoint (temporary, no auth required)
-app.get('/api/v1/admin/debug-transactions', async (req, res) => {
-  try {
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-    
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('id, reference, ticket_price, processing_fee, total_amount, squadco_fee, platform_commission, organizer_earnings, status')
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      return res.status(500).json({ error: error.message });
-    }
-    
-    return res.status(200).json({
-      success: true,
-      count: data?.length || 0,
-      data: data || []
-    });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
 });
 
 // Catch-all 404 handler for undefined routes
