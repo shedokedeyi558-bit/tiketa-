@@ -709,12 +709,12 @@ export const getDashboardStats = async (req, res) => {
       });
     }
 
-    // Query 3: All transactions with event details (with error handling)
+    // Query 3: All transactions (with error handling)
     try {
       console.log('⏳ Querying all transactions from transactions table...');
       const transactionsResult = await supabase
         .from('transactions')
-        .select('id, ticket_price, total_amount, processing_fee, platform_commission, squadco_fee, organizer_earnings, buyer_name, event_id, status, created_at, events(title)')
+        .select('id, ticket_price, total_amount, processing_fee, platform_commission, squadco_fee, organizer_earnings, buyer_name, event_id, status, created_at')
         .order('created_at', { ascending: false });
       
       console.log('TRANSACTIONS QUERY RESULT:', JSON.stringify({
@@ -730,7 +730,7 @@ export const getDashboardStats = async (req, res) => {
           code: transactionsResult.error.code,
           details: transactionsResult.error.details,
         });
-      } else if (transactionsResult.data) {
+      } else if (transactionsResult.data && transactionsResult.data.length > 0) {
         console.log('📊 Transactions fetched:', transactionsResult.data.length);
         
         // ✅ DEBUG: Log all unique status values
@@ -753,18 +753,37 @@ export const getDashboardStats = async (req, res) => {
         stats.organizerEarnings = Number(successTransactions.reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0) || 0);
         stats.platformNetProfit = Number((stats.totalProcessingFees + stats.platformCommission - stats.squadcoCharges).toFixed(2));
 
-        // ✅ Get last 5 successful transactions for recent transactions with event names
-        stats.recentTransactions = successTransactions.slice(0, 5).map(t => ({
+        // ✅ Get event IDs from recent transactions and fetch event names
+        const recentSuccessTransactions = successTransactions.slice(0, 5);
+        const eventIds = [...new Set(recentSuccessTransactions.map(t => t.event_id).filter(Boolean))];
+        
+        let eventMap = {};
+        if (eventIds.length > 0) {
+          try {
+            const eventsResult = await supabase
+              .from('events')
+              .select('id, title')
+              .in('id', eventIds);
+            
+            if (eventsResult.data) {
+              eventMap = Object.fromEntries(eventsResult.data.map(e => [e.id, e.title]));
+            }
+          } catch (eventErr) {
+            console.error('⚠️ Error fetching event names:', eventErr.message);
+          }
+        }
+
+        // ✅ Build recent transactions with event names
+        stats.recentTransactions = recentSuccessTransactions.map(t => ({
           id: t.id,
           buyer_name: t.buyer_name || 'Unknown',
-          event_name: t.events?.title || 'Unknown Event',
+          event_name: eventMap[t.event_id] || 'Unknown Event',
           event_id: t.event_id,
           amount: Number(t.ticket_price || 0),
           created_at: t.created_at,
         }));
 
         console.log('✅ Transactions stats:', {
-          total: stats.totalOrders,
           successful: stats.successfulPayments,
           pending: stats.pendingPayments,
           revenue: stats.totalRevenue,
@@ -773,6 +792,7 @@ export const getDashboardStats = async (req, res) => {
           squadcoCharges: stats.squadcoCharges,
           organizerEarnings: stats.organizerEarnings,
           platformNetProfit: stats.platformNetProfit,
+          recentTransactionsCount: stats.recentTransactions.length,
         });
       }
     } catch (err) {
