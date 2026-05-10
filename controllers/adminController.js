@@ -93,7 +93,7 @@ export const getAdminEvents = async (req, res) => {
       if (!txMap[tx.event_id]) {
         txMap[tx.event_id] = { revenue: 0, organizer_earnings: 0, tickets_sold: 0 };
       }
-      txMap[tx.event_id].revenue += Number(tx.ticket_price || 0);
+      txMap[tx.event_id].revenue += Number(tx.total_amount || 0);
       txMap[tx.event_id].organizer_earnings += Number(tx.organizer_earnings || 0);
       txMap[tx.event_id].tickets_sold += 1;
     });
@@ -1226,7 +1226,7 @@ export const getRevenueAnalytics = async (req, res) => {
       .map(id => {
         const eventTxns = (transactions || []).filter(t => t.event_id === id);
         const ticketsSold = eventTxns.length;
-        const ticketRevenue = eventTxns.reduce((sum, t) => sum + Number(t.ticket_price || 0), 0);
+        const ticketRevenue = eventTxns.reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
         const processingFees = eventTxns.reduce((sum, t) => sum + Number(t.processing_fee || 0), 0);
         const totalAmount = eventTxns.reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
         const squadcoCharges = Number((eventTxns.reduce((sum, t) => sum + Number(t.squadco_fee || 0), 0)).toFixed(2));
@@ -1275,7 +1275,7 @@ export const getRevenueAnalytics = async (req, res) => {
       .map(id => {
         const organizerTxns = (transactions || []).filter(t => t.organizer_id === id);
         const ticketsSold = organizerTxns.length;
-        const ticketRevenue = organizerTxns.reduce((sum, t) => sum + Number(t.ticket_price || 0), 0);
+        const ticketRevenue = organizerTxns.reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
         const processingFees = organizerTxns.reduce((sum, t) => sum + Number(t.processing_fee || 0), 0);
         const totalAmount = organizerTxns.reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
         const squadcoCharges = Number((organizerTxns.reduce((sum, t) => sum + Number(t.squadco_fee || 0), 0)).toFixed(2));
@@ -1394,12 +1394,12 @@ export const getAdminEventById = async (req, res) => {
     // ✅ Fetch transaction data for revenue and tickets sold using service role
     const { data: txData } = await supabaseAdmin
       .from('transactions')
-      .select('ticket_price, organizer_earnings, status')
+      .select('total_amount, organizer_earnings, status')
       .eq('event_id', id)
       .eq('status', 'success');
 
     const tickets_sold = (txData || []).length;
-    const total_revenue = (txData || []).reduce((sum, t) => sum + Number(t.ticket_price || 0), 0);
+    const total_revenue = (txData || []).reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
     const organizer_earnings = (txData || []).reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0);
 
     console.log('✅ Transaction data fetched:', { tickets_sold, total_revenue });
