@@ -794,7 +794,7 @@ export const getDashboardStats = async (req, res) => {
             buyer_name: displayName,
             event_name: eventMap[t.event_id] || 'Unknown Event',
             event_id: t.event_id,
-            amount: Number(t.ticket_price || 0),
+            amount: Number(t.total_amount || 0),
             created_at: t.created_at,
           };
         });
