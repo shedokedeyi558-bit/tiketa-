@@ -889,8 +889,13 @@ export const getDashboardStats = async (req, res) => {
       });
     }
 
-    // ✅ CRITICAL: Ensure all stats are numbers, never null/undefined
+    // ✅ CRITICAL: Ensure all stats are numbers, never null/undefined (except arrays)
     Object.keys(stats).forEach(key => {
+      // Skip array fields like recentTransactions
+      if (Array.isArray(stats[key])) {
+        return;
+      }
+      
       if (stats[key] === null || stats[key] === undefined || isNaN(stats[key])) {
         console.warn(`⚠️ Stat ${key} was ${stats[key]}, setting to 0`);
         stats[key] = 0;
