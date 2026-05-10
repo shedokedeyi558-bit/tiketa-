@@ -751,6 +751,16 @@ export const getDashboardStats = async (req, res) => {
         stats.totalProcessingFees = Number(successTransactions.reduce((sum, t) => sum + Number(t.processing_fee || 0), 0) || 0);
         stats.squadcoCharges = Number(successTransactions.reduce((sum, t) => sum + Number(t.squadco_fee || 0), 0) || 0);
         stats.organizerEarnings = Number(successTransactions.reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0) || 0);
+        
+        // ✅ CRITICAL: Platform Net Profit = processing_fee + platform_commission - squadco_fee
+        console.log('💰 Platform Net Profit Calculation:', {
+          totalProcessingFees: stats.totalProcessingFees,
+          platformCommission: stats.platformCommission,
+          squadcoCharges: stats.squadcoCharges,
+          formula: `${stats.totalProcessingFees} + ${stats.platformCommission} - ${stats.squadcoCharges}`,
+          result: stats.totalProcessingFees + stats.platformCommission - stats.squadcoCharges,
+        });
+        
         stats.platformNetProfit = Number((stats.totalProcessingFees + stats.platformCommission - stats.squadcoCharges).toFixed(2));
 
         // ✅ Get event IDs from recent transactions and fetch event names
