@@ -101,13 +101,12 @@ export const initiatePayment = async (req, res) => {
 
     // ✅ Calculate fees according to exact business logic
     const ticketPrice = cartItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-    const processingFee = PROCESSING_FEE; // ₦100 flat (paid by attendee, goes to platform)
-    const totalAmount = ticketPrice + processingFee; // What attendee actually pays
-    
-    const squadcoFee = (totalAmount * 1.2) / 100; // 1.2% of total_amount (deducted by Squadco)
-    const platformCommission = (ticketPrice * PLATFORM_COMMISSION_PERCENTAGE) / 100; // 3% of ticket_price ONLY
-    const organizerEarnings = ticketPrice - platformCommission; // ticket_price - platform_commission
-    const platformNetProfit = processingFee - squadcoFee + platformCommission; // processing_fee - squadco_fee + platform_commission
+    const processingFee = ticketPrice <= 10000 ? 100 : (ticketPrice * 1.2) / 100;
+    const totalAmount = ticketPrice + processingFee;
+    const squadcoFee = (totalAmount * 1.2) / 100;
+    const platformCommission = (ticketPrice * 3) / 100;
+    const organizerEarnings = totalAmount - squadcoFee - platformCommission;
+    const platformNetProfit = platformCommission;
 
     console.log('📋 Transaction fee breakdown:', {
       reference,

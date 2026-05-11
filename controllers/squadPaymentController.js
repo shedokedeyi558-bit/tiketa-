@@ -125,21 +125,14 @@ export const initiatePaymentController = async (req, res) => {
     
     // 🔑 CRITICAL: Extract ticket_price from cartItems
     const ticketPrice = cartItems?.[0]?.price ?? cartItems?.[0]?.ticket_price ?? 0;
-    console.log('💰 TICKET PRICE EXTRACTED:', ticketPrice);
     
     // 🔑 CRITICAL: Calculate fees and commission
-    const processingFee = 100; // ₦100 fixed processing fee
-    const squadcoFee = (amount * 1.2) / 100; // 1.2% of total_amount
-    const platformCommission = Math.round(ticketPrice * 0.03); // ✅ 3% of ticket_price ONLY
-    const organizerEarnings = ticketPrice - platformCommission; // ✅ ticket_price - platform_commission
-    
-    console.log('💵 FEES CALCULATED:', {
-      processingFee,
-      squadcoFee: squadcoFee.toFixed(2),
-      platformCommission,
-      organizerEarnings,
-      total: amount,
-    });
+    const processingFee = ticketPrice <= 10000 ? 100 : (ticketPrice * 1.2) / 100;
+    const totalAmount = ticketPrice + processingFee;
+    const squadcoFee = (totalAmount * 1.2) / 100;
+    const platformCommission = (ticketPrice * 3) / 100;
+    const organizerEarnings = totalAmount - squadcoFee - platformCommission;
+    const platformNetProfit = platformCommission;
     
     // Create timeout promise for transaction insert
     const txTimeoutPromise = new Promise((_, reject) =>
@@ -156,12 +149,12 @@ export const initiatePaymentController = async (req, res) => {
             organizer_id: event.organizer_id, // ✅ Include organizer_id
             buyer_email: buyerEmail,
             buyer_name: buyerName || buyerEmail.split('@')[0],
-            ticket_price: ticketPrice, // ✅ Unit price of ticket
-            processing_fee: processingFee, // ✅ Fixed ₦100 fee
-            total_amount: amount, // ✅ Total paid by buyer
-            platform_commission: platformCommission, // ✅ 3% platform fee
-            squadco_fee: squadcoFee, // ✅ 1.2% of total_amount
-            organizer_earnings: organizerEarnings, // ✅ What organizer receives
+            ticket_price: ticketPrice,
+            processing_fee: processingFee,
+            total_amount: totalAmount,
+            platform_commission: platformCommission,
+            squadco_fee: squadcoFee,
+            organizer_earnings: organizerEarnings,
             status: 'pending',
             squadco_response: { cartItems, attendees, amount, buyerEmail },
             ip_address: req.ip || 'unknown',
