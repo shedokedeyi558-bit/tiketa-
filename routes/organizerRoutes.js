@@ -44,7 +44,7 @@ router.get('/stats', verifyToken, async (req, res) => {
     // Get all successful transactions for this organizer
     const { data: transactions, error: txError } = await supabase
       .from('transactions')
-      .select('id, total_amount')
+      .select('id, organizer_earnings')
       .eq('organizer_id', organizerId)
       .eq('status', 'success');
 
@@ -59,14 +59,14 @@ router.get('/stats', verifyToken, async (req, res) => {
 
     // Calculate stats
     const ticketsSold = (transactions || []).length;
-    const totalRevenue = Number((transactions || []).reduce((sum, t) => sum + Number(t.total_amount || 0), 0).toFixed(2));
+    const totalEarned = Number((transactions || []).reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0).toFixed(2));
 
     return res.status(200).json({
       success: true,
       data: {
         total_events: totalEvents || 0,
         tickets_sold: ticketsSold,
-        total_revenue: totalRevenue
+        total_earned: totalEarned
       }
     });
   } catch (err) {
