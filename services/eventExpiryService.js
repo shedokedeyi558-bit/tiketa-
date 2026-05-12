@@ -65,7 +65,16 @@ export const updateExpiredEvents = async () => {
     for (const event of activeEvents) {
       try {
         if (!event.end_time) continue; // skip events with no end time
-        const eventEndTime = new Date(event.end_time);
+        
+        // Parse end_time which is in HH:MM:SS format
+        const timeParts = event.end_time.split(':');
+        const eventHours = parseInt(timeParts[0], 10);
+        const eventMinutes = parseInt(timeParts[1], 10);
+        const eventSeconds = parseInt(timeParts[2], 10);
+        
+        // Create event end datetime using today's date in Nigeria timezone
+        const eventEndTime = new Date(nigeriaTime.getFullYear(), nigeriaTime.getMonth(), nigeriaTime.getDate(), eventHours, eventMinutes, eventSeconds, 0);
+        
         if (eventEndTime < nigeriaTime) {
           expiredEventIds.push(event.id);
         }
