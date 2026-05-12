@@ -37,7 +37,7 @@ export const updateExpiredEvents = async () => {
     // ✅ Fetch all active events
     const { data: activeEvents, error: fetchError } = await supabaseAdmin
       .from('events')
-      .select('id, title, end_time, status')
+      .select('id, title, date, end_date, end_time, status')
       .eq('status', 'active');
 
     if (fetchError) {
@@ -64,18 +64,18 @@ export const updateExpiredEvents = async () => {
 
     for (const event of activeEvents) {
       try {
-        if (!event.end_time) continue; // skip events with no end time
+        // Use end_date if available, otherwise fall back to date
+        const expiryDateStr = event.end_date || event.date;
+        if (!expiryDateStr) continue;
         
-        // Parse end_time which is in HH:MM:SS format
-        const timeParts = event.end_time.split(':');
-        const eventHours = parseInt(timeParts[0], 10);
-        const eventMinutes = parseInt(timeParts[1], 10);
-        const eventSeconds = parseInt(timeParts[2], 10);
+        // Build full datetime string
+        const timeStr = event.end_time || '23:59:59';
+        const fullDateTimeStr = `${expiryDateStr.split('T')[0]}T${timeStr}+01:00`;
+        const eventEndDateTime = new Date(fullDateTimeStr);
         
-        // Create event end datetime using today's date in Nigeria timezone
-        const eventEndTime = new Date(nigeriaTime.getFullYear(), nigeriaTime.getMonth(), nigeriaTime.getDate(), eventHours, eventMinutes, eventSeconds, 0);
+        if (isNaN(eventEndDateTime.getTime())) continue;
         
-        if (eventEndTime < nigeriaTime) {
+        if (eventEndDateTime < nigeriaTime) {
           expiredEventIds.push(event.id);
         }
       } catch (e) {
