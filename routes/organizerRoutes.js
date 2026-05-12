@@ -128,37 +128,11 @@ router.get('/transactions', verifyToken, async (req, res) => {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    // Get all events for this organizer
-    const { data: organizerEvents, error: evError } = await supabase
-      .from('events')
-      .select('id, title')
-      .eq('organizer_id', organizerId);
-
-    if (evError) {
-      console.error('❌ Error fetching organizer events:', evError);
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to fetch events',
-        message: evError.message
-      });
-    }
-
-    // Build event map
-    const eventMap = Object.fromEntries((organizerEvents || []).map(e => [e.id, e.title]));
-    const eventIds = Object.keys(eventMap);
-
-    if (eventIds.length === 0) {
-      return res.status(200).json({
-        success: true,
-        data: []
-      });
-    }
-
-    // Get all transactions for this organizer's events
+    // Fetch transactions directly by organizer_id
     const { data: transactions, error: txError } = await supabase
       .from('transactions')
-      .select('id, buyer_name, buyer_email, ticket_price, processing_fee, total_amount, organizer_earnings, created_at, event_id')
-      .in('event_id', eventIds)
+      .select('id, buyer_name, buyer_email, ticket_price, processing_fee, total_amount, organizer_earnings, created_at, event_id, organizer_id')
+      .eq('organizer_id', organizerId)
       .eq('status', 'success')
       .order('created_at', { ascending: false });
 
@@ -169,6 +143,19 @@ router.get('/transactions', verifyToken, async (req, res) => {
         error: 'Failed to fetch transactions',
         message: txError.message
       });
+    }
+
+    // Then fetch event titles separately
+    const eventIds = [...new Set((transactions || []).map(t => t.event_id).filter(Boolean))];
+    let eventMap = {};
+
+    if (eventIds.length > 0) {
+      const { data: events } = await supabase
+        .from('events')
+        .select('id, title')
+        .in('id', eventIds);
+
+      eventMap = Object.fromEntries((events || []).map(e => [e.id, e.title]));
     }
 
     // Enrich transactions with event titles
