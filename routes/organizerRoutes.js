@@ -5,6 +5,81 @@ import { deleteEventIfNoSales } from '../services/eventExpiryService.js';
 const router = express.Router();
 
 /**
+ * GET /api/v1/organizer/stats
+ * Returns dashboard stats for the logged-in organizer
+ */
+router.get('/stats', verifyToken, async (req, res) => {
+  try {
+    const organizerId = req.user.id;
+
+    if (!organizerId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+        message: 'You must be logged in'
+      });
+    }
+
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+
+    // Get total events count (all statuses)
+    const { count: totalEvents, error: evCountError } = await supabase
+      .from('events')
+      .select('id', { count: 'exact', head: true })
+      .eq('organizer_id', organizerId);
+
+    if (evCountError) {
+      console.error('❌ Error counting events:', evCountError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch events',
+        message: evCountError.message
+      });
+    }
+
+    // Get all successful transactions for this organizer
+    const { data: transactions, error: txError } = await supabase
+      .from('transactions')
+      .select('id, total_amount')
+      .eq('organizer_id', organizerId)
+      .eq('status', 'success');
+
+    if (txError) {
+      console.error('❌ Error fetching transactions:', txError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch transactions',
+        message: txError.message
+      });
+    }
+
+    // Calculate stats
+    const ticketsSold = (transactions || []).length;
+    const totalRevenue = Number((transactions || []).reduce((sum, t) => sum + Number(t.total_amount || 0), 0).toFixed(2));
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        total_events: totalEvents || 0,
+        tickets_sold: ticketsSold,
+        total_revenue: totalRevenue
+      }
+    });
+  } catch (err) {
+    console.error('❌ Stats error:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Server error',
+      message: 'Internal server error'
+    });
+  }
+});
+
+/**
  * DELETE /api/v1/organizer/events/:id
  * Delete organizer event - only owner can delete, only if no tickets sold
  */
