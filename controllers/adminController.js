@@ -1139,7 +1139,7 @@ export const getRevenueAnalytics = async (req, res) => {
     // ✅ Calculate summary stats according to exact business logic
     console.log('\n📊 STARTING CALCULATIONS...');
     const totalTicketRevenue = (transactions || []).reduce((sum, t) => {
-      const val = Number(t.ticket_price || 0);
+      const val = Number(t.total_amount || 0);
       return sum + val;
     }, 0);
     
