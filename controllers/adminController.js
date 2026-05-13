@@ -221,26 +221,23 @@ export const approveEvent = async (req, res) => {
       });
     }
 
-    // ✅ Fetch organizer details manually
-    let approveOrg = (await supabase
+    // Get organizer details from profiles
+    let { data: approveOrg } = await supabaseAdmin
       .from('profiles')
       .select('full_name, email')
       .eq('id', event.organizer_id)
-      .single()).data;
+      .single();
 
-    // If email is missing from profiles, get it from auth.users as fallback
+    // Fallback: get email from auth.users if not in profiles
     if (!approveOrg?.email) {
-      try {
-        const { data: authUser } = await supabase.auth.admin.getUserById(event.organizer_id);
-        if (authUser?.user?.email) {
-          approveOrg = approveOrg || {};
-          approveOrg.email = authUser.user.email;
-          console.log(`✅ Email fetched from auth.users: ${approveOrg.email}`);
-        }
-      } catch (authError) {
-        console.warn('⚠️ Could not fetch email from auth.users:', authError.message);
-      }
+      const { data: { user: authUser } } = await supabaseAdmin.auth.admin.getUserById(event.organizer_id);
+      approveOrg = {
+        full_name: approveOrg?.full_name || 'Organizer',
+        email: authUser?.email || ''
+      };
     }
+
+    console.log('📧 Organizer email for notification:', approveOrg?.email);
 
     // Update event status to active
     const { data: updatedEvent, error: updateError } = await supabase
@@ -308,26 +305,23 @@ export const rejectEvent = async (req, res) => {
       });
     }
 
-    // ✅ Fetch organizer details manually
-    let rejectOrg = (await supabase
+    // Get organizer details from profiles
+    let { data: rejectOrg } = await supabaseAdmin
       .from('profiles')
       .select('full_name, email')
       .eq('id', event.organizer_id)
-      .single()).data;
+      .single();
 
-    // If email is missing from profiles, get it from auth.users as fallback
+    // Fallback: get email from auth.users if not in profiles
     if (!rejectOrg?.email) {
-      try {
-        const { data: authUser } = await supabase.auth.admin.getUserById(event.organizer_id);
-        if (authUser?.user?.email) {
-          rejectOrg = rejectOrg || {};
-          rejectOrg.email = authUser.user.email;
-          console.log(`✅ Email fetched from auth.users: ${rejectOrg.email}`);
-        }
-      } catch (authError) {
-        console.warn('⚠️ Could not fetch email from auth.users:', authError.message);
-      }
+      const { data: { user: authUser } } = await supabaseAdmin.auth.admin.getUserById(event.organizer_id);
+      rejectOrg = {
+        full_name: rejectOrg?.full_name || 'Organizer',
+        email: authUser?.email || ''
+      };
     }
+
+    console.log('📧 Organizer email for notification:', rejectOrg?.email);
 
     // Update event status to rejected
     const { data: updatedEvent, error: updateError } = await supabase
