@@ -567,21 +567,47 @@ export const getSalesFeed = async (req, res) => {
 
     console.log(`✅ Found ${transactions?.length || 0} successful transactions`);
 
+    // Get unique event IDs and organizer IDs
+    const eventIds = [...new Set(transactions.map(t => t.event_id).filter(Boolean))];
+    const organizerIds = [...new Set(transactions.map(t => t.organizer_id).filter(Boolean))];
+
+    // Fetch event titles
+    const { data: events } = await supabase
+      .from('events')
+      .select('id, title')
+      .in('id', eventIds);
+
+    // Fetch organizer names
+    const { data: organizers } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', organizerIds);
+
+    // Build lookup maps
+    const eventMap = Object.fromEntries((events || []).map(e => [e.id, e.title]));
+    const organizerMap = Object.fromEntries((organizers || []).map(o => [o.id, o.full_name]));
+
+    // Enrich transactions with event title and organizer name
+    const enrichedTransactions = transactions.map(t => ({
+      ...t,
+      event_title: eventMap[t.event_id] || 'Unknown Event',
+      organizer_name: organizerMap[t.organizer_id] || 'Unknown Organizer',
+    }));
+
     // Calculate platform profit for each transaction
-    const transactionsWithProfit = (transactions || []).map(t => {
+    const transactionsWithProfit = enrichedTransactions.map(t => {
       const totalAmount = Number(t.total_amount || 0);
       const processingFee = Number(t.processing_fee || 0);
       const platformCommission = Number(t.platform_commission || 0);
       const squadcoFee = Number(t.squadco_fee || 0);
-      
-      // Calculate platform profit: platform_commission only
-      const platformProfit = Number(platformCommission.toFixed(2));
 
       return {
         id: t.id,
         reference: t.reference,
         event_id: t.event_id,
+        event_title: t.event_title,
         organizer_id: t.organizer_id,
+        organizer_name: t.organizer_name,
         buyer_name: t.buyer_name,
         buyer_email: t.buyer_email,
         ticket_price: Number(t.ticket_price || 0),
@@ -589,7 +615,6 @@ export const getSalesFeed = async (req, res) => {
         total_amount: totalAmount,
         platform_commission: platformCommission,
         squadco_fee: squadcoFee,
-        platform_profit: platformProfit,
         organizer_earnings: Number(t.organizer_earnings || 0),
         status: t.status,
         created_at: t.created_at,
@@ -601,7 +626,6 @@ export const getSalesFeed = async (req, res) => {
     const totalProcessingFees = transactionsWithProfit.reduce((sum, t) => sum + t.processing_fee, 0);
     const totalPlatformCommission = transactionsWithProfit.reduce((sum, t) => sum + t.platform_commission, 0);
     const totalSquadcoFees = transactionsWithProfit.reduce((sum, t) => sum + t.squadco_fee, 0);
-    const totalPlatformProfit = transactionsWithProfit.reduce((sum, t) => sum + t.platform_profit, 0);
     const totalOrganizerEarnings = transactionsWithProfit.reduce((sum, t) => sum + t.organizer_earnings, 0);
 
     console.log('✅ Sales feed calculated:', {
@@ -610,7 +634,6 @@ export const getSalesFeed = async (req, res) => {
       totalProcessingFees: Number(totalProcessingFees.toFixed(2)),
       totalPlatformCommission: Number(totalPlatformCommission.toFixed(2)),
       totalSquadcoFees: Number(totalSquadcoFees.toFixed(2)),
-      totalPlatformProfit: Number(totalPlatformProfit.toFixed(2)),
     });
 
     return res.status(200).json({
@@ -623,7 +646,6 @@ export const getSalesFeed = async (req, res) => {
         total_processing_fees: Number(totalProcessingFees.toFixed(2)),
         total_platform_commission: Number(totalPlatformCommission.toFixed(2)),
         total_squadco_fees: Number(totalSquadcoFees.toFixed(2)),
-        total_platform_profit: Number(totalPlatformProfit.toFixed(2)),
         total_organizer_earnings: Number(totalOrganizerEarnings.toFixed(2)),
       },
     });
