@@ -222,11 +222,25 @@ export const approveEvent = async (req, res) => {
     }
 
     // ✅ Fetch organizer details manually
-    const { data: approveOrg } = await supabase
+    let approveOrg = (await supabase
       .from('profiles')
       .select('full_name, email')
       .eq('id', event.organizer_id)
-      .single();
+      .single()).data;
+
+    // If email is missing from profiles, get it from auth.users as fallback
+    if (!approveOrg?.email) {
+      try {
+        const { data: authUser } = await supabase.auth.admin.getUserById(event.organizer_id);
+        if (authUser?.user?.email) {
+          approveOrg = approveOrg || {};
+          approveOrg.email = authUser.user.email;
+          console.log(`✅ Email fetched from auth.users: ${approveOrg.email}`);
+        }
+      } catch (authError) {
+        console.warn('⚠️ Could not fetch email from auth.users:', authError.message);
+      }
+    }
 
     // Update event status to active
     const { data: updatedEvent, error: updateError } = await supabase
@@ -295,11 +309,25 @@ export const rejectEvent = async (req, res) => {
     }
 
     // ✅ Fetch organizer details manually
-    const { data: rejectOrg } = await supabase
+    let rejectOrg = (await supabase
       .from('profiles')
       .select('full_name, email')
       .eq('id', event.organizer_id)
-      .single();
+      .single()).data;
+
+    // If email is missing from profiles, get it from auth.users as fallback
+    if (!rejectOrg?.email) {
+      try {
+        const { data: authUser } = await supabase.auth.admin.getUserById(event.organizer_id);
+        if (authUser?.user?.email) {
+          rejectOrg = rejectOrg || {};
+          rejectOrg.email = authUser.user.email;
+          console.log(`✅ Email fetched from auth.users: ${rejectOrg.email}`);
+        }
+      } catch (authError) {
+        console.warn('⚠️ Could not fetch email from auth.users:', authError.message);
+      }
+    }
 
     // Update event status to rejected
     const { data: updatedEvent, error: updateError } = await supabase
