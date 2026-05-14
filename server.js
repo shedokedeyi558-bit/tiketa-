@@ -108,48 +108,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// DEBUG: Query Tunde profile and events
-app.get('/api/v1/debug/tunde-profile', async (req, res) => {
-  try {
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-    
-    // Query 1: Get profile
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('id, full_name, email, role')
-      .eq('email', 'tunde12@gmail.com')
-      .single();
-    
-    if (profileError) {
-      return res.status(500).json({ error: profileError.message });
-    }
-
-    if (!profile) {
-      return res.status(404).json({ error: 'Profile not found' });
-    }
-
-    // Query 2: Get events for this organizer
-    const { data: events, error: eventsError } = await supabaseAdmin
-      .from('events')
-      .select('id, title, status, organizer_id')
-      .eq('organizer_id', profile.id);
-    
-    if (eventsError) {
-      return res.status(500).json({ error: eventsError.message });
-    }
-    
-    return res.status(200).json({
-      success: true,
-      profile: profile,
-      events: events || [],
-      eventCount: events?.length || 0
-    });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
-});
-
 // API Routes
 app.use(`/api/${process.env.API_VERSION}/auth`, authRoutes);
 app.use(`/api/${process.env.API_VERSION}/events`, eventRoutes);
