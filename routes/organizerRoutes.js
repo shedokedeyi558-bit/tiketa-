@@ -12,6 +12,9 @@ router.get('/stats', verifyToken, async (req, res) => {
   try {
     const organizerId = req.user.id;
 
+    console.log('🔍 Stats request - organizerId:', organizerId);
+    console.log('🔍 Stats request - req.user:', JSON.stringify(req.user));
+
     if (!organizerId) {
       return res.status(401).json({
         success: false,
@@ -47,6 +50,8 @@ router.get('/stats', verifyToken, async (req, res) => {
       .select('id, organizer_earnings')
       .eq('organizer_id', organizerId)
       .eq('status', 'success');
+
+    console.log('🔍 Transactions found:', transactions?.length, 'error:', txError?.message);
 
     if (txError) {
       console.error('❌ Error fetching transactions:', txError);
