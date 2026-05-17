@@ -108,27 +108,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// DEBUG: Verify ticket_types column exists
-app.get('/api/v1/debug/run-migration', async (req, res) => {
-  try {
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-    
-    console.log('🔍 Verifying ticket_types column exists...');
-    
-    const { data, error } = await supabaseAdmin
-      .from('events')
-      .select('id, ticket_types')
-      .limit(1);
-
-    console.log('Result:', { success: !error, data, error: error?.message });
-    
-    return res.json({ success: !error, data, error: error?.message });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
-});
-
 // API Routes
 app.use(`/api/${process.env.API_VERSION}/auth`, authRoutes);
 app.use(`/api/${process.env.API_VERSION}/events`, eventRoutes);
