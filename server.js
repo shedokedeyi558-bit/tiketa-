@@ -108,42 +108,22 @@ app.use((req, res, next) => {
   next();
 });
 
-// DEBUG: Run ticket_types migration
+// DEBUG: Verify ticket_types column exists
 app.get('/api/v1/debug/run-migration', async (req, res) => {
   try {
     const { createClient } = await import('@supabase/supabase-js');
     const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
     
-    console.log('🔍 Checking if ticket_types column exists...');
+    console.log('🔍 Verifying ticket_types column exists...');
     
-    // Check if column exists
-    const { error: checkError } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from('events')
-      .select('ticket_types')
+      .select('id, ticket_types')
       .limit(1);
 
-    console.log('Column check result:', checkError?.message || 'Column exists!');
-
-    if (checkError && checkError.message.includes('column')) {
-      console.log('❌ Column does not exist. Running migration...');
-
-      // Run migration
-      const { error: migrationError } = await supabaseAdmin.rpc('exec_sql', {
-        sql: "ALTER TABLE events ADD COLUMN IF NOT EXISTS ticket_types JSONB DEFAULT '[]'::jsonb;"
-      });
-
-      if (migrationError) {
-        return res.status(500).json({ error: 'Migration failed', message: migrationError.message });
-      }
-
-      console.log('✅ Migration completed successfully!');
-      return res.status(200).json({ success: true, message: 'Migration completed' });
-    } else if (checkError) {
-      return res.status(500).json({ error: 'Error checking column', message: checkError.message });
-    } else {
-      console.log('✅ Column already exists!');
-      return res.status(200).json({ success: true, message: 'Column already exists' });
-    }
+    console.log('Result:', { success: !error, data, error: error?.message });
+    
+    return res.json({ success: !error, data, error: error?.message });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
