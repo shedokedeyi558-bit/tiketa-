@@ -239,7 +239,7 @@ export const getEventById = async (req, res) => {
     // ✅ Explicitly select start_time and end_time from database
     const { data: event, error: eventError } = await supabase
       .from('events')
-      .select('*, start_time, end_time')
+      .select('*, start_time, end_time, ticket_types')
       .eq('id', id)
       .single();
 
@@ -330,6 +330,7 @@ export const getEventById = async (req, res) => {
       
       // Ticket Information
       ticket_price: event.ticket_price || 0,
+      ticket_types: event.ticket_types || [], // ✅ Array of {name, price} objects
       total_tickets: displayTotalTickets,
       tickets_sold: ticketsSold,
       tickets_remaining: displayTicketsRemaining,
@@ -412,7 +413,7 @@ export const createEvent = async (req, res) => {
       mediaUrl: req.body.mediaUrl,
     });
     
-    const { title, description, date, end_date, location, total_tickets, category, image_url, image_base64 } = req.body;
+    const { title, description, date, end_date, location, total_tickets, category, image_url, image_base64, ticket_types } = req.body;
 
     // ✅ CRITICAL: Validate organizer is authenticated
     if (!organizerId) {
@@ -591,6 +592,7 @@ export const createEvent = async (req, res) => {
           status: 'pending', // ✅ Set to pending - requires admin approval
           category: category || 'General',
           image_url: finalImageUrl, // ✅ Use uploaded image URL or provided URL
+          ticket_types: ticket_types || [], // ✅ Array of {name, price} objects
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
