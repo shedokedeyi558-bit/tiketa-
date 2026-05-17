@@ -576,6 +576,21 @@ export const createEvent = async (req, res) => {
       category: category || 'General',
       image_url: finalImageUrl,
     });
+
+    // ✅ Validate end date/time is after start date/time
+    if (start_time && (end_date || end_time)) {
+      const startDateTime = new Date(`${date}T${start_time}`);
+      const endDateStr = end_date || date;
+      const endTimeStr = end_time || '23:59:00';
+      const endDateTime = new Date(`${endDateStr}T${endTimeStr}`);
+
+      if (endDateTime <= startDateTime) {
+        return res.status(400).json({
+          success: false,
+          message: 'End date/time must be after start date/time.'
+        });
+      }
+    }
     
     const { data: event, error: eventError } = await supabase
       .from('events')
