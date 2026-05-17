@@ -37,7 +37,7 @@ export const updateExpiredEvents = async () => {
     // ✅ Fetch all active events
     const { data: activeEvents, error: fetchError } = await supabaseAdmin
       .from('events')
-      .select('id, title, date, end_date, end_time, status')
+      .select('id, title, date, end_date, end_time, start_time, status')
       .eq('status', 'active');
 
     if (fetchError) {
@@ -74,6 +74,14 @@ export const updateExpiredEvents = async () => {
         const eventEndDateTime = new Date(fullDateTimeStr);
         
         if (isNaN(eventEndDateTime.getTime())) continue;
+        
+        // Safety check: skip if end time is before start time (invalid event data)
+        if (event.start_time) {
+          const startDateStr = event.date?.split('T')[0];
+          const startFullStr = `${startDateStr}T${event.start_time}+01:00`;
+          const eventStartDateTime = new Date(startFullStr);
+          if (eventEndDateTime <= eventStartDateTime) continue; // skip invalid events
+        }
         
         if (eventEndDateTime < nigeriaTime) {
           expiredEventIds.push(event.id);
