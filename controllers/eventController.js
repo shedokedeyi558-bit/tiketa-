@@ -601,6 +601,8 @@ export const createEvent = async (req, res) => {
     // ✅ Create event with validated organizer_id - status set to 'pending' for admin approval
     console.log('📝 Inserting event into database...');
     console.log('📝 IMAGE_URL VALUE BEING SAVED:', finalImageUrl);
+    console.log('📝 TICKET_TYPES VALUE BEING SAVED:', JSON.stringify(ticket_types, null, 2));
+    console.log('📝 TOTAL_TICKETS VALUE BEING SAVED:', total_tickets);
     console.log('📝 EVENT DATA BEING INSERTED:', {
       title,
       description: description || '',
@@ -613,6 +615,7 @@ export const createEvent = async (req, res) => {
       status: 'pending',
       category: category || 'General',
       image_url: finalImageUrl,
+      ticket_types: ticket_types || [],
     });
 
     // ✅ Validate end date/time is after start date/time
@@ -640,12 +643,12 @@ export const createEvent = async (req, res) => {
           end_date: end_date || date,
           location,
           organizer_id: organizerId, // ✅ Use authenticated user's ID
-          total_tickets: total_tickets || 0,
+          total_tickets: total_tickets || 0, // ✅ Save total_tickets as sum from frontend
           tickets_sold: 0,
           status: 'pending', // ✅ Set to pending - requires admin approval
           category: category || 'General',
           image_url: finalImageUrl, // ✅ Use uploaded image URL or provided URL
-          ticket_types: ticket_types || [], // ✅ Array of {name, price} objects
+          ticket_types: ticket_types || [], // ✅ Save ticket_types as-is from frontend (JSONB column - source of truth)
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
