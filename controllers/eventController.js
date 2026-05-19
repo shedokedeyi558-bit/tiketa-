@@ -170,8 +170,13 @@ export const getAllEvents = async (req, res) => {
 
     console.log('✅ Events found:', data?.length ?? 0);
 
+    // ✅ Fetch all ticket_types for these events (bulk join)
+    const { data: allTicketTypes } = await supabase
+      .from('ticket_types')
+      .select('id, event_id, name, price, description');
+
     // ✅ CRITICAL: Calculate tickets remaining for each event with proper logic
-    const eventsWithTickets = (data ?? []).map(event => {
+    let events = (data ?? []).map(event => {
       const totalTickets = event.total_tickets;
       const ticketsSold = event.tickets_sold || 0;
 
@@ -192,6 +197,23 @@ export const getAllEvents = async (req, res) => {
         tickets_remaining: displayTicketsRemaining,
       };
     });
+
+    // ✅ Merge ticket_types from ticket_types table (if exists, use it; otherwise fall back to JSONB column)
+    events = events.map(event => {
+      const rows = allTicketTypes?.filter(tt => tt.event_id === event.id) || [];
+      if (rows.length > 0) {
+        event.ticket_types = rows.map(tt => ({
+          id: tt.id,
+          name: tt.name,
+          price: tt.price,
+          description: tt.description || '',
+          available: event.total_tickets - (event.tickets_sold || 0),
+        }));
+      }
+      return event;
+    });
+
+    const eventsWithTickets = events;
 
     return res.status(200).json({
       success: true,
@@ -307,6 +329,22 @@ export const getEventById = async (req, res) => {
 
     // ✅ Use image_url for the event flyer/poster
     const image_url = event.image_url || null;
+
+    // ✅ Fetch ticket_types from ticket_types table (if exists, use it; otherwise fall back to JSONB column)
+    const { data: ticketTypesRows } = await supabase
+      .from('ticket_types')
+      .select('id, name, price, description')
+      .eq('event_id', id);
+
+    if (ticketTypesRows && ticketTypesRows.length > 0) {
+      event.ticket_types = ticketTypesRows.map(tt => ({
+        id: tt.id,
+        name: tt.name,
+        price: tt.price,
+        description: tt.description || '',
+        available: event.total_tickets - (event.tickets_sold || 0),
+      }));
+    }
 
     // ✅ Build comprehensive response for public page
     // ✅ Use start_time and end_time directly from database
