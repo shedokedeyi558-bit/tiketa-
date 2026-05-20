@@ -564,8 +564,11 @@ export const getAdminOrders = async (req, res) => {
  * Returns all transactions with calculated platform profit per transaction
  * 
  * Formula per transaction:
- * - squadco_fee = (total_amount * 1.2) / 100
- * - platform_profit = processing_fee + platform_commission - squadco_fee
+ * - processing_fee = ₦100 flat (ticket ≤ ₦5,000) OR 1.5% of ticket_price (ticket > ₦5,000)
+ * - squadco_fee = total_amount × 1.2%
+ * - platform_commission = ticket_price × 3%
+ * - organizer_earnings = ticket_price × 97%
+ * - platform_net = platform_commission + (processing_fee - squadco_fee)
  */
 export const getSalesFeed = async (req, res) => {
   try {

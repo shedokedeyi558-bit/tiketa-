@@ -10,8 +10,10 @@ import {
   getOrganizerEmail 
 } from '../services/emailService.js';
 
-const PLATFORM_COMMISSION_PERCENTAGE = 3;
-const PROCESSING_FEE = 100; // ₦100
+const PLATFORM_COMMISSION_PERCENTAGE = 3; // 3% of ticket_price always
+const FLAT_PROCESSING_FEE = 100; // ₦100 for tickets ≤ ₦5,000
+const PERCENTAGE_PROCESSING_FEE = 1.5; // 1.5% for tickets > ₦5,000
+const SQUADCO_RATE = 1.2; // 1.2% SquadCo charge
 const ADMIN_CHARGE_PERCENTAGE = 0.35; // 35% (0.35 as decimal)
 const ADMIN_MINIMUM_CHARGE = 100; // ₦100 minimum
 
@@ -101,11 +103,13 @@ export const initiatePayment = async (req, res) => {
 
     // ✅ Calculate fees according to exact business logic
     const ticketPrice = cartItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-    const processingFee = ticketPrice <= 10000 ? 100 : (ticketPrice * 1.2) / 100;
+    const processingFee = ticketPrice <= 5000
+      ? FLAT_PROCESSING_FEE
+      : (ticketPrice * PERCENTAGE_PROCESSING_FEE) / 100;
     const totalAmount = ticketPrice + processingFee;
-    const squadcoFee = (totalAmount * 1.2) / 100;
-    const platformCommission = (ticketPrice * 3) / 100;
-    const organizerEarnings = totalAmount - squadcoFee - platformCommission;
+    const squadcoFee = (totalAmount * SQUADCO_RATE) / 100;
+    const platformCommission = (ticketPrice * PLATFORM_COMMISSION_PERCENTAGE) / 100;
+    const organizerEarnings = (ticketPrice * 97) / 100;
     const platformNetProfit = platformCommission;
 
     console.log('📋 Transaction fee breakdown:', {
@@ -760,8 +764,8 @@ async function recordPlatformEarnings(transaction) {
     // Calculate admin charges: 35% of ticket price + ₦100
     const adminCharge = (parseFloat(transaction.ticket_price) * ADMIN_CHARGE_PERCENTAGE) + ADMIN_MINIMUM_CHARGE;
     
-    // Calculate Squadco fee (3% of total amount)
-    const squadcoFee = (parseFloat(transaction.total_amount) * 0.03);
+    // Calculate Squadco fee (1.2% of total amount)
+    const squadcoFee = (parseFloat(transaction.total_amount) * SQUADCO_RATE) / 100;
     
     // Calculate what goes to admin wallet
     // Admin gets: 3% platform commission + admin charges
