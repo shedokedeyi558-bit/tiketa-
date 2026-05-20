@@ -286,10 +286,8 @@ export const approveEvent = async (req, res) => {
 export const rejectEvent = async (req, res) => {
   try {
     const { id } = req.params;
-    const { rejection_reason } = req.body;
+    const rejection_reason = req.body.rejection_reason || req.body.reason;
 
-    console.log('REJECTION req.body:', req.body);
-    console.log('REJECTION reason value:', rejection_reason);
     console.log(`❌ Rejecting event ${id}...`);
 
     // Get event details before updating
