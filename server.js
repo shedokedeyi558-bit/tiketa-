@@ -41,6 +41,7 @@ import walletRoutes from './routes/walletRoutes.js';
 import withdrawalRoutes from './routes/withdrawalRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
+import { updateExpiredEvents } from './services/eventExpiryService.js';
 
 // Initialize express app
 const app = express();
@@ -145,6 +146,37 @@ app._router.stack.forEach(function(r){
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'Server is running' });
+});
+
+// ✅ Event expiry check endpoint - manually trigger expiry check
+app.get('/api/expire-check', async (req, res) => {
+  try {
+    console.log('🔍 Manual expiry check triggered');
+    
+    const result = await updateExpiredEvents();
+    
+    if (result.success) {
+      console.log(`✅ Expiry check completed: ${result.expired} events expired`);
+      return res.status(200).json({
+        success: true,
+        message: `Expiry check completed: ${result.expired} events cancelled`,
+        expired: result.expired,
+      });
+    } else {
+      console.error('❌ Expiry check failed:', result.error);
+      return res.status(500).json({
+        success: false,
+        message: 'Expiry check failed',
+        error: result.error,
+      });
+    }
+  } catch (err) {
+    console.error('❌ Error in expire-check endpoint:', err);
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
 });
 
 // Debug endpoint - check environment variables (development only)

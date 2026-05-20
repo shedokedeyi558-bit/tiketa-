@@ -8,12 +8,12 @@ const supabaseAdmin = createClient(
 );
 
 /**
- * ✅ Update expired events - auto-expire events where date + start_time has passed
+ * ✅ Update expired events - auto-expire events where date + end_time has passed
  * 
  * Expiry condition:
- * - event.date + event.start_time < current Nigeria time (UTC+1)
- * - event.status = 'active'
- * - Update to status = 'ended'
+ * - event.end_date + event.end_time < current Nigeria time (UTC+1)
+ * - event.status = 'active' OR 'pending'
+ * - Update to status = 'cancelled'
  * 
  * @returns {Promise<{success: boolean, expired: number, error: string|null}>}
  */
@@ -34,14 +34,14 @@ export const updateExpiredEvents = async () => {
     console.log('🕐 Current UTC time:', now.toISOString());
     console.log('🕐 Current Nigeria time (UTC+1):', nigeriaTime.toISOString());
 
-    // ✅ Fetch all active events
-    const { data: activeEvents, error: fetchError } = await supabaseAdmin
+    // ✅ Fetch all active AND pending events
+    const { data: eventsToCheck, error: fetchError } = await supabaseAdmin
       .from('events')
       .select('id, title, date, end_date, end_time, start_time, status')
-      .eq('status', 'active');
+      .in('status', ['active', 'pending']);
 
     if (fetchError) {
-      console.error('❌ Error fetching active events:', fetchError);
+      console.error('❌ Error fetching events:', fetchError);
       return {
         success: false,
         expired: 0,
@@ -49,9 +49,9 @@ export const updateExpiredEvents = async () => {
       };
     }
 
-    console.log(`📅 Found ${activeEvents?.length || 0} active events`);
+    console.log(`📅 Found ${eventsToCheck?.length || 0} active/pending events`);
 
-    if (!activeEvents || activeEvents.length === 0) {
+    if (!eventsToCheck || eventsToCheck.length === 0) {
       return {
         success: true,
         expired: 0,
@@ -62,7 +62,7 @@ export const updateExpiredEvents = async () => {
     // ✅ Find events that have expired
     const expiredEventIds = [];
 
-    for (const event of activeEvents) {
+    for (const event of eventsToCheck) {
       try {
         // Use end_date if available, otherwise fall back to date
         const expiryDateStr = event.end_date || event.date;
@@ -85,20 +85,21 @@ export const updateExpiredEvents = async () => {
         
         if (eventEndDateTime < nigeriaTime) {
           expiredEventIds.push(event.id);
+          console.log(`⏰ Event expired: ${event.title} (${event.status}) - End: ${fullDateTimeStr}`);
         }
       } catch (e) {
         console.warn(`⚠️ Error parsing event ${event.id}:`, e.message);
       }
     }
 
-    console.log(`🔍 Found ${expiredEventIds.length} expired events`);
+    console.log(`🔍 Found ${expiredEventIds.length} expired events (active + pending)`);
 
-    // ✅ Update expired events to 'ended' status
+    // ✅ Update expired events to 'cancelled' status (both active and pending)
     if (expiredEventIds.length > 0) {
       const { error: updateError } = await supabaseAdmin
         .from('events')
         .update({
-          status: 'ended',
+          status: 'cancelled',
           updated_at: new Date().toISOString(),
         })
         .in('id', expiredEventIds);
@@ -112,7 +113,7 @@ export const updateExpiredEvents = async () => {
         };
       }
 
-      console.log(`✅ Updated ${expiredEventIds.length} events to 'ended' status`);
+      console.log(`✅ Updated ${expiredEventIds.length} events to 'cancelled' status`);
     }
 
     return {
