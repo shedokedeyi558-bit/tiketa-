@@ -288,6 +288,8 @@ export const rejectEvent = async (req, res) => {
     const { id } = req.params;
     const { rejection_reason } = req.body;
 
+    console.log('REJECTION req.body:', req.body);
+    console.log('REJECTION reason value:', rejection_reason);
     console.log(`❌ Rejecting event ${id}...`);
 
     // Get event details before updating
