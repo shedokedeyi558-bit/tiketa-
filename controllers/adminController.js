@@ -1424,6 +1424,25 @@ export const getAdminEventById = async (req, res) => {
       end_time: event.end_time,
     });
 
+    // ✅ Fetch ticket_types from ticket_types table if JSONB column is empty
+    if (!event.ticket_types || event.ticket_types.length === 0) {
+      const { data: ticketTypesRows } = await supabaseAdmin
+        .from('ticket_types')
+        .select('id, name, price, description')
+        .eq('event_id', id);
+
+      if (ticketTypesRows && ticketTypesRows.length > 0) {
+        event.ticket_types = ticketTypesRows.map(tt => ({
+          id: tt.id,
+          name: tt.name,
+          price: tt.price,
+          description: tt.description || '',
+          available: event.total_tickets - (event.tickets_sold || 0),
+          quantity: event.total_tickets,
+        }));
+      }
+    }
+
     // ✅ Fetch organizer details using service role
     const { data: org } = await supabaseAdmin
       .from('profiles')
@@ -1462,6 +1481,7 @@ export const getAdminEventById = async (req, res) => {
         
         // Date & Time
         date: event.date,
+        end_date: event.end_date,
         start_time: event.start_time || null,  // ✅ From database
         end_time: event.end_time || null,      // ✅ From database
         location: event.location,
@@ -1470,6 +1490,7 @@ export const getAdminEventById = async (req, res) => {
         ticket_price: event.ticket_price || 0,
         total_tickets: event.total_tickets || 0,
         tickets_sold: tickets_sold,
+        ticket_types: event.ticket_types || [], // ✅ From JSONB or ticket_types table
         
         // Revenue Information
         revenue: total_revenue,
