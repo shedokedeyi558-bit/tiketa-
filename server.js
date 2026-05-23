@@ -111,9 +111,6 @@ app.use(morgan('combined'));
 
 // Debug middleware - log all incoming requests
 app.use((req, res, next) => {
-  console.log(`📨 ${req.method} ${req.path}`);
-  console.log(`   Origin: ${req.headers.origin || 'none'}`);
-  console.log(`   User-Agent: ${req.headers['user-agent']?.substring(0, 50) || 'none'}`);
   next();
 });
 
@@ -133,7 +130,6 @@ app.use(`/api/${process.env.API_VERSION}/admin`, adminRoutes);
 
 // ✅ Admin Activity Feed Endpoint
 app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
-  console.log('🔍 Activity endpoint hit');
   try {
     const limit = parseInt(req.query.limit) || 20;
 
@@ -292,12 +288,9 @@ app.get('/health', (req, res) => {
 // ✅ Event expiry check endpoint - manually trigger expiry check
 app.get('/api/expire-check', async (req, res) => {
   try {
-    console.log('🔍 Manual expiry check triggered');
-    
     const result = await updateExpiredEvents();
     
     if (result.success) {
-      console.log(`✅ Expiry check completed: ${result.expired} events expired`);
       return res.status(200).json({
         success: true,
         message: `Expiry check completed: ${result.expired} events cancelled`,
@@ -345,11 +338,6 @@ app.get('/debug/env', (req, res) => {
   });
 });
 
-// Debug: Log all requests
-app.use((req, res, next) => {
-  console.log(`${req.method} ${req.path}`);
-  next();
-});
 
 // Catch-all 404 handler for undefined routes
 app.use('*', (req, res) => {
