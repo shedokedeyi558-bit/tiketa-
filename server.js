@@ -42,6 +42,14 @@ import withdrawalRoutes from './routes/withdrawalRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import { updateExpiredEvents } from './services/eventExpiryService.js';
+import { adminAuth } from './middlewares/adminMiddleware.js';
+import { createClient } from '@supabase/supabase-js';
+
+// Create admin client for server-side operations
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 // Initialize express app
 const app = express();
@@ -122,6 +130,138 @@ app.use(`/api/${process.env.API_VERSION}/wallet`, walletRoutes);
 app.use(`/api/${process.env.API_VERSION}/withdrawals`, withdrawalRoutes);
 app.use(`/api/${process.env.API_VERSION}/orders`, orderRoutes);
 app.use(`/api/${process.env.API_VERSION}/admin`, adminRoutes);
+
+// ✅ Admin Activity Feed Endpoint
+app.get('/api/admin/activity', adminAuth, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 20;
+
+    // Fetch recent events (submissions, approvals, rejections, cancellations)
+    const { data: recentEvents } = await supabaseAdmin
+      .from('events')
+      .select('id, title, status, created_at, updated_at, organizer_id')
+      .order('updated_at', { ascending: false })
+      .limit(10);
+
+    // Fetch recent organizer signups
+    const { data: recentProfiles } = await supabaseAdmin
+      .from('profiles')
+      .select('id, full_name, email, role, created_at')
+      .eq('role', 'organizer')
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    // Fetch recent transactions
+    const { data: recentTransactions } = await supabaseAdmin
+      .from('transactions')
+      .select('id, created_at, total_amount, ticket_price, event_id, organizer_id, status')
+      .eq('status', 'success')
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    // Fetch recent withdrawals
+    const { data: recentWithdrawals } = await supabaseAdmin
+      .from('withdrawals')
+      .select('id, created_at, amount, status, organizer_id')
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    // Fetch event titles for transactions
+    const eventIds = [...new Set((recentTransactions || []).map(t => t.event_id))];
+    let eventTitles = {};
+    if (eventIds.length > 0) {
+      const { data: eventData } = await supabaseAdmin
+        .from('events')
+        .select('id, title')
+        .in('id', eventIds);
+      (eventData || []).forEach(e => { eventTitles[e.id] = e.title; });
+    }
+
+    // Fetch organizer names for withdrawals
+    const withdrawalOrgIds = [...new Set((recentWithdrawals || []).map(w => w.organizer_id))];
+    let orgNames = {};
+    if (withdrawalOrgIds.length > 0) {
+      const { data: orgData } = await supabaseAdmin
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', withdrawalOrgIds);
+      (orgData || []).forEach(o => { orgNames[o.id] = o.full_name; });
+    }
+
+    // Build unified activity list
+    const activities = [];
+
+    // Event activities
+    (recentEvents || []).forEach(event => {
+      const statusMap = {
+        pending: { label: 'submitted event for review', icon: '🎟️', time: event.created_at },
+        active: { label: 'event was approved', icon: '✅', time: event.updated_at },
+        rejected: { label: 'event was rejected', icon: '❌', time: event.updated_at },
+        cancelled: { label: 'event expired without review', icon: '⏰', time: event.updated_at },
+        ended: { label: 'event ended', icon: '🏁', time: event.updated_at },
+      };
+      const mapped = statusMap[event.status];
+      if (mapped) {
+        activities.push({
+          id: `event-${event.id}-${event.status}`,
+          type: 'event',
+          icon: mapped.icon,
+          message: `*${event.title}* ${mapped.label}`,
+          timestamp: mapped.time,
+          link: `/admin/events/${event.id}`,
+        });
+      }
+    });
+
+    // Organizer signup activities
+    (recentProfiles || []).forEach(profile => {
+      activities.push({
+        id: `profile-${profile.id}`,
+        type: 'signup',
+        icon: '👤',
+        message: `*${profile.full_name || profile.email}* joined as organizer`,
+        timestamp: profile.created_at,
+        link: `/admin/organizers`,
+      });
+    });
+
+    // Transaction activities
+    (recentTransactions || []).forEach(transaction => {
+      const eventTitle = eventTitles[transaction.event_id] || 'an event';
+      activities.push({
+        id: `transaction-${transaction.id}`,
+        type: 'transaction',
+        icon: '💰',
+        message: `Ticket sold for *${eventTitle}* — ₦${parseFloat(transaction.total_amount).toLocaleString('en-NG')}`,
+        timestamp: transaction.created_at,
+        link: `/admin/sales`,
+      });
+    });
+
+    // Withdrawal activities
+    (recentWithdrawals || []).forEach(withdrawal => {
+      const orgName = orgNames[withdrawal.organizer_id] || 'An organizer';
+      const statusLabel = withdrawal.status === 'pending' ? 'requested a withdrawal' : `withdrawal ${withdrawal.status}`;
+      activities.push({
+        id: `withdrawal-${withdrawal.id}`,
+        type: 'withdrawal',
+        icon: '💳',
+        message: `*${orgName}* ${statusLabel} — ₦${parseFloat(withdrawal.amount).toLocaleString('en-NG')}`,
+        timestamp: withdrawal.created_at,
+        link: `/admin/payouts`,
+      });
+    });
+
+    // Sort by timestamp descending and limit
+    activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    const limited = activities.slice(0, limit);
+
+    res.json({ activities: limited, total: activities.length });
+  } catch (err) {
+    console.error('Activity feed error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // DEBUG: Log all registered routes
 console.log('🔍 REGISTERED ROUTES:');
