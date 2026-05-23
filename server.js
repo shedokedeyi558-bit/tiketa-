@@ -132,7 +132,7 @@ app.use(`/api/${process.env.API_VERSION}/orders`, orderRoutes);
 app.use(`/api/${process.env.API_VERSION}/admin`, adminRoutes);
 
 // ✅ Admin Activity Feed Endpoint
-app.get('/api/admin/activity', adminAuth, async (req, res) => {
+app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
   console.log('🔍 Activity endpoint hit');
   try {
     const limit = parseInt(req.query.limit) || 20;
