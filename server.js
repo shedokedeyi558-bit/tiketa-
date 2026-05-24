@@ -176,12 +176,17 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
 
     // Fetch organizer names for withdrawals
     const withdrawalOrgIds = [...new Set((recentWithdrawals || []).map(w => w.organizer_id))];
+    
+    // Also fetch organizer names for events
+    const eventOrgIds = [...new Set((recentEvents || []).map(e => e.organizer_id))];
+    const allOrgIds = [...new Set([...withdrawalOrgIds, ...eventOrgIds])];
+    
     let orgNames = {};
-    if (withdrawalOrgIds.length > 0) {
+    if (allOrgIds.length > 0) {
       const { data: orgData } = await supabaseAdmin
         .from('profiles')
         .select('id, full_name')
-        .in('id', withdrawalOrgIds);
+        .in('id', allOrgIds);
       (orgData || []).forEach(o => { orgNames[o.id] = o.full_name; });
     }
 
@@ -203,7 +208,7 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
           id: `event-${event.id}-${event.status}`,
           type: 'event',
           icon: mapped.icon,
-          message: `*${event.title}* ${mapped.label}`,
+          message: `*${orgNames[event.organizer_id] || 'An organizer'}* ${mapped.label} ${event.title}`,
           timestamp: mapped.time,
           link: `/admin/events/${event.id}`,
         });
@@ -250,7 +255,16 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
     });
 
     // Sort by timestamp descending and limit
-    activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    console.error('[ACTIVITY TIMESTAMP DEBUG]', {
+      sampleTimestamps: activities.slice(0, 3).map(a => ({
+        time: a.timestamp,
+        parsed: new Date(a.timestamp).getTime(),
+        now: Date.now(),
+        diffMs: Date.now() - new Date(a.timestamp).getTime(),
+        diffHours: (Date.now() - new Date(a.timestamp).getTime()) / (1000 * 60 * 60)
+      }))
+    });
+    activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     const limited = activities.slice(0, limit);
 
     res.json({ activities: limited, total: activities.length });
