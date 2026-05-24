@@ -254,16 +254,7 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
       });
     });
 
-    // Sort by timestamp descending and limit
-    console.error('[ACTIVITY TIMESTAMP DEBUG]', {
-      sampleTimestamps: activities.slice(0, 3).map(a => ({
-        time: a.timestamp,
-        parsed: new Date(a.timestamp).getTime(),
-        now: Date.now(),
-        diffMs: Date.now() - new Date(a.timestamp).getTime(),
-        diffHours: (Date.now() - new Date(a.timestamp).getTime()) / (1000 * 60 * 60)
-      }))
-    });
+    // Sort by timestamp descending and limit (using Date.now() for UTC reference)
     activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     const limited = activities.slice(0, limit);
 
