@@ -232,6 +232,8 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
           message: `*${orgNames[event.organizer_id] || 'An organizer'}* ${mapped.label} ${event.title}`,
           timestamp: mapped.time,
           timeAgo: timeAgo(mapped.time),
+          serverNow: new Date().toISOString(),
+          timestampRaw: mapped.time,
           link: `/admin/events/${event.id}`,
         });
       }
