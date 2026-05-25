@@ -232,8 +232,6 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
           message: `*${orgNames[event.organizer_id] || 'An organizer'}* ${mapped.label} ${event.title}`,
           timestamp: mapped.time,
           timeAgo: timeAgo(mapped.time),
-          serverNow: new Date().toISOString(),
-          timestampRaw: mapped.time,
           link: `/admin/events/${event.id}`,
         });
       }
@@ -248,8 +246,6 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
         message: `*${profile.full_name || profile.email}* joined as organizer`,
         timestamp: profile.created_at,
         timeAgo: timeAgo(profile.created_at),
-        serverNow: new Date().toISOString(),
-        timestampRaw: profile.created_at,
         link: `/admin/organizers`,
       });
     });
@@ -264,8 +260,6 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
         message: `Ticket sold for *${eventTitle}* — ₦${parseFloat(transaction.total_amount).toLocaleString('en-NG')}`,
         timestamp: transaction.created_at,
         timeAgo: timeAgo(transaction.created_at),
-        serverNow: new Date().toISOString(),
-        timestampRaw: transaction.created_at,
         link: `/admin/sales`,
       });
     });
@@ -281,8 +275,6 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
         message: `*${orgName}* ${statusLabel} — ₦${parseFloat(withdrawal.amount).toLocaleString('en-NG')}`,
         timestamp: withdrawal.created_at,
         timeAgo: timeAgo(withdrawal.created_at),
-        serverNow: new Date().toISOString(),
-        timestampRaw: withdrawal.created_at,
         link: `/admin/payouts`,
       });
     });
