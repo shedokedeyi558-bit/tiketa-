@@ -219,10 +219,10 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
     (recentEvents || []).forEach(event => {
       const statusMap = {
         pending: { label: 'submitted event for review', icon: '🎟️', time: event.created_at },
-        active: { label: 'event was approved', icon: '✅', time: event.updated_at },
-        rejected: { label: 'event was rejected', icon: '❌', time: event.updated_at },
-        cancelled: { label: 'event expired without review', icon: '⏰', time: event.updated_at },
-        ended: { label: 'event ended', icon: '🏁', time: event.updated_at },
+        active: { label: 'event was approved', icon: '✅', time: event.created_at },
+        rejected: { label: 'event was rejected', icon: '❌', time: event.created_at },
+        cancelled: { label: 'event expired without review', icon: '⏰', time: event.created_at },
+        ended: { label: 'event ended', icon: '🏁', time: event.created_at },
       };
       const mapped = statusMap[event.status];
       if (mapped) {

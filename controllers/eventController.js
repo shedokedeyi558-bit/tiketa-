@@ -648,7 +648,6 @@ export const createEvent = async (req, res) => {
           category: category || 'General',
           image_url: finalImageUrl, // ✅ Use uploaded image URL or provided URL
           ticket_types: ticket_types || [], // ✅ Save ticket_types as-is from frontend (JSONB column - source of truth)
-          updated_at: new Date().toISOString(),
         },
       ])
       .select()
