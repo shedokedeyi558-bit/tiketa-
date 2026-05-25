@@ -242,7 +242,7 @@ export const approveEvent = async (req, res) => {
     // Update event status to active
     const { data: updatedEvent, error: updateError } = await supabase
       .from('events')
-      .update({ status: 'active', updated_at: new Date().toISOString() })
+      .update({ status: 'active' })
       .eq('id', id)
       .select()
       .single();
@@ -328,8 +328,7 @@ export const rejectEvent = async (req, res) => {
       .from('events')
       .update({ 
         status: 'rejected',
-        rejection_reason: rejection_reason || 'No reason provided',
-        updated_at: new Date().toISOString() 
+        rejection_reason: rejection_reason || 'No reason provided'
       })
       .eq('id', id)
       .select()

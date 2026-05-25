@@ -102,8 +102,7 @@ export const updateExpiredEvents = async () => {
       const { error: updateError } = await supabaseAdmin
         .from('events')
         .update({
-          status: 'cancelled',
-          updated_at: new Date().toISOString(),
+          status: 'cancelled'
         })
         .in('id', expiredEventIds);
 
