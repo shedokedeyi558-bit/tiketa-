@@ -142,17 +142,16 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
 
     // ✅ Helper function to calculate "time ago" with UTC
     function timeAgo(timestamp) {
-      const diffMs = Date.now() - new Date(timestamp).getTime();
-      const diffSec = Math.floor(diffMs / 1000);
-      const diffMin = Math.floor(diffSec / 60);
-      const diffHr = Math.floor(diffMin / 60);
-      const diffDays = Math.floor(diffHr / 24);
+      // Force UTC comparison - parse timestamp as UTC and compare to UTC now
+      const now = Math.floor(Date.now() / 1000);
+      const ts = Math.floor(new Date(timestamp).getTime() / 1000);
+      const diffSec = now - ts;
       
       if (diffSec < 10) return 'just now';
       if (diffSec < 60) return `${diffSec}s ago`;
-      if (diffMin < 60) return `${diffMin}m ago`;
-      if (diffHr < 24) return `${diffHr}h ago`;
-      return `${diffDays}d ago`;
+      if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+      if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+      return `${Math.floor(diffSec / 86400)}d ago`;
     }
 
     // Fetch recent events (submissions, approvals, rejections, cancellations)
@@ -233,6 +232,8 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
           message: `*${orgNames[event.organizer_id] || 'An organizer'}* ${mapped.label} ${event.title}`,
           timestamp: mapped.time,
           timeAgo: timeAgo(mapped.time),
+          serverNow: new Date().toISOString(),
+          timestampRaw: mapped.time,
           link: `/admin/events/${event.id}`,
         });
       }
@@ -247,6 +248,8 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
         message: `*${profile.full_name || profile.email}* joined as organizer`,
         timestamp: profile.created_at,
         timeAgo: timeAgo(profile.created_at),
+        serverNow: new Date().toISOString(),
+        timestampRaw: profile.created_at,
         link: `/admin/organizers`,
       });
     });
@@ -261,6 +264,8 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
         message: `Ticket sold for *${eventTitle}* — ₦${parseFloat(transaction.total_amount).toLocaleString('en-NG')}`,
         timestamp: transaction.created_at,
         timeAgo: timeAgo(transaction.created_at),
+        serverNow: new Date().toISOString(),
+        timestampRaw: transaction.created_at,
         link: `/admin/sales`,
       });
     });
@@ -276,6 +281,8 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
         message: `*${orgName}* ${statusLabel} — ₦${parseFloat(withdrawal.amount).toLocaleString('en-NG')}`,
         timestamp: withdrawal.created_at,
         timeAgo: timeAgo(withdrawal.created_at),
+        serverNow: new Date().toISOString(),
+        timestampRaw: withdrawal.created_at,
         link: `/admin/payouts`,
       });
     });
