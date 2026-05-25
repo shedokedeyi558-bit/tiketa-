@@ -1,3 +1,5 @@
+process.env.TZ = 'UTC';
+
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -131,18 +133,16 @@ app.use(`/api/${process.env.API_VERSION}/admin`, adminRoutes);
 // ✅ Admin Activity Feed Endpoint
 app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
   try {
+    // ✅ Prevent caching of activity feed
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     const limit = parseInt(req.query.limit) || 20;
 
-    // ✅ Helper function to calculate "time ago" with UTC parsing
+    // ✅ Helper function to calculate "time ago" with UTC
     function timeAgo(timestamp) {
-      console.log('[TIMEAGO INPUT]', timestamp, typeof timestamp);
-      
-      // Force UTC parsing — append Z if no timezone info present
-      const ts = typeof timestamp === 'string' && !timestamp.endsWith('Z') && !timestamp.includes('+')
-        ? timestamp + 'Z'
-        : timestamp;
-      
-      const diffMs = Date.now() - new Date(ts).getTime();
+      const diffMs = Date.now() - new Date(timestamp).getTime();
       const diffSec = Math.floor(diffMs / 1000);
       const diffMin = Math.floor(diffSec / 60);
       const diffHr = Math.floor(diffMin / 60);
