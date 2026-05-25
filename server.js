@@ -142,7 +142,18 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
 
     // ✅ Helper function to calculate "time ago" with UTC
     function timeAgo(timestamp) {
-      const diffMs = Date.now() - new Date(timestamp).getTime();
+      const now = Date.now();
+      const tsMs = new Date(timestamp).getTime();
+      const diffMs = now - tsMs;
+      
+      console.log('[ACTIVITY TIMESTAMP DEBUG]', {
+        timestamp,
+        now,
+        tsMs,
+        diffMs,
+        diffHours: Math.floor(diffMs / (1000 * 60 * 60)),
+      });
+      
       const diffSec = Math.floor(diffMs / 1000);
       const diffMin = Math.floor(diffSec / 60);
       const diffHr = Math.floor(diffMin / 60);
