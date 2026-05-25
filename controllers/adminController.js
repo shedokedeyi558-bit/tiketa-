@@ -423,7 +423,6 @@ export const createAdminEvent = async (req, res) => {
           ticket_types: ticketTypes,
           organizer_id: validatedOrganizerId, // ✅ Use validated organizer_id
           created_by: req.user.id,
-          created_at: new Date().toISOString(),
         },
       ])
       .select();

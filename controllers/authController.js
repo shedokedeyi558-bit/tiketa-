@@ -87,7 +87,6 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
         email,
         full_name: fullName || '',
         role,
-        created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }, { onConflict: 'id' })
       .select()

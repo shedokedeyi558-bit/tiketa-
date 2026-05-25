@@ -135,6 +135,8 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
 
     // ✅ Helper function to calculate "time ago" with UTC parsing
     function timeAgo(timestamp) {
+      console.log('[TIMEAGO INPUT]', timestamp, typeof timestamp);
+      
       // Force UTC parsing — append Z if no timezone info present
       const ts = typeof timestamp === 'string' && !timestamp.endsWith('Z') && !timestamp.includes('+')
         ? timestamp + 'Z'

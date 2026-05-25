@@ -496,7 +496,6 @@ export const createEvent = async (req, res) => {
         email: req.user?.email || '',
         role: 'organizer',
         full_name: req.user?.user_metadata?.full_name || '',
-        created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }, { onConflict: 'id' });
 
@@ -649,7 +648,6 @@ export const createEvent = async (req, res) => {
           category: category || 'General',
           image_url: finalImageUrl, // ✅ Use uploaded image URL or provided URL
           ticket_types: ticket_types || [], // ✅ Save ticket_types as-is from frontend (JSONB column - source of truth)
-          created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
       ])
