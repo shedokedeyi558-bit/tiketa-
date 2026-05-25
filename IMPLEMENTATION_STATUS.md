@@ -1,205 +1,121 @@
-# Implementation Status - Revenue & Transaction System
+# Implementation Status - May 19, 2026
 
-## ✅ COMPLETED IMPLEMENTATIONS
+## Current Task: Ticket Types JSONB Support
 
-### 1. Payment Controller - Transaction Fee Calculations
-**File**: `controllers/paymentController.js`
+### ✅ COMPLETED
 
-**Status**: ✅ CORRECT
+#### 1. Backend Code Implementation
+- **Event Creation Endpoint** (`createEvent`)
+  - ✅ Extracts `ticket_types` from request body
+  - ✅ Validates end date/time is after start date/time
+  - ✅ Saves `ticket_types` array to database
+  - ✅ Defaults to empty array if not provided
 
-**Calculations**:
-```javascript
-const ticketPrice = cartItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-const processingFee = 100; // ₦100 flat
-const totalAmount = ticketPrice + processingFee;
-const squadcoFee = (totalAmount * 1.2) / 100; // 1.2% of total_amount
-const platformCommission = (ticketPrice * 3) / 100; // 3% of ticket_price ONLY ✅
-const organizerEarnings = ticketPrice - platformCommission;
-const platformNetProfit = processingFee - squadcoFee + platformCommission;
-```
+- **Public Event Detail Endpoint** (`getEventById`)
+  - ✅ Selects `ticket_types` from database
+  - ✅ Returns `ticket_types` in response
+  - ✅ Defaults to empty array if null
 
-**What's Saved to Database**:
-- `ticket_price`: Base ticket amount
-- `processing_fee`: ₦100 flat fee
-- `total_amount`: ticket_price + processing_fee
-- `platform_commission`: 3% of ticket_price only
-- `organizer_earnings`: ticket_price - platform_commission
-- `status`: 'pending' → 'success' after verification
+- **Event Expiry Service** (`updateExpiredEvents`)
+  - ✅ Added safety check to skip invalid events
+  - ✅ Skips events where `end_time <= start_time`
+  - ✅ Properly handles multi-day events with `end_date`
+  - ✅ Includes `start_time` in select query
 
-### 2. Revenue Analytics Endpoint
-**File**: `controllers/adminController.js` - `getRevenueAnalytics()`
+#### 2. Database Migration
+- ✅ Migration file created: `db/migrations/021_add_ticket_types_to_events.sql`
+- ✅ Adds JSONB column with default empty array
+- ✅ Includes documentation comment
 
-**Status**: ✅ FULLY IMPLEMENTED
+#### 3. Git Commits
+- ✅ All changes committed to main branch
+- ✅ Latest commit: `4fce707` - "Add safety check to skip invalid events in expiry service"
+- ✅ Branch is up to date with origin/main
 
-**Features**:
-- ✅ Fetches all transactions with status='success'
-- ✅ Calculates summary statistics:
-  - Total Ticket Revenue (sum of ticket_price)
-  - Total Processing Fees (sum of processing_fee)
-  - Total Amount Collected (sum of total_amount)
-  - Total Squadco Charges (1.2% of total_amount)
-  - Total Platform Commission (sum of platform_commission)
-  - Total Organizer Earnings (sum of organizer_earnings)
-  - Total Platform Net Profit (processing_fee - squadco_fee + platform_commission)
-- ✅ Monthly breakdown for chart data
-- ✅ Revenue breakdown per event
-- ✅ Revenue breakdown per organizer
-- ✅ Comprehensive console logging for debugging
+---
 
-### 3. Dashboard Stats Endpoint
-**File**: `controllers/adminController.js` - `getDashboardStats()`
+## 🔴 PENDING: Supabase Migration
 
-**Status**: ✅ FULLY IMPLEMENTED
+The migration SQL needs to be run manually in the Supabase dashboard:
 
-**Features**:
-- ✅ Total Events count
-- ✅ Total Orders count
-- ✅ Total Revenue (sum of total_amount from successful transactions)
-- ✅ Successful Payments count
-- ✅ Pending Payments count (always returns number, never null)
-- ✅ Platform Commission (sum of platform_commission)
-- ✅ Active Events count (status='active' AND future dates)
-- ✅ Organizers count
-- ✅ Pending Withdrawals count
-- ✅ All stats guaranteed to be numbers (0 if no data)
+### Steps to Complete:
+1. Go to https://app.supabase.com
+2. Select project: `eouaddaofaevwkqnsmdw`
+3. Click **SQL Editor**
+4. Run this SQL:
+   ```sql
+   ALTER TABLE events ADD COLUMN IF NOT EXISTS ticket_types JSONB DEFAULT '[]'::jsonb;
+   COMMENT ON COLUMN events.ticket_types IS 'Array of ticket types with structure: [{"name": "VIP", "price": 5000}, {"name": "Regular", "price": 2000}]';
+   ```
+5. Verify with:
+   ```sql
+   SELECT column_name, data_type 
+   FROM information_schema.columns 
+   WHERE table_name = 'events' AND column_name = 'ticket_types';
+   ```
 
-### 4. Event Approval System
-**File**: `controllers/adminController.js` & `controllers/eventController.js`
+---
 
-**Status**: ✅ FULLY IMPLEMENTED
+## Testing Checklist
 
-**Features**:
-- ✅ Events created with status='pending'
-- ✅ GET /api/v1/admin/events/pending - fetch pending events
-- ✅ POST /api/v1/admin/events/:id/approve - approve event
-- ✅ POST /api/v1/admin/events/:id/reject - reject event with reason
-- ✅ Email notifications on approval/rejection
-- ✅ Public events only show status='active' AND future dates
-- ✅ Organizer events show all statuses
+After running the migration:
 
-### 5. Admin Organizers Endpoint
-**File**: `controllers/adminController.js` - `getAdminOrganizers()`
+- [ ] Test event creation with ticket_types
+  ```bash
+  POST /api/v1/events
+  Body: { ..., "ticket_types": [{"name": "VIP", "price": 5000}] }
+  ```
 
-**Status**: ✅ FULLY IMPLEMENTED
+- [ ] Test event detail endpoint
+  ```bash
+  GET /api/v1/events/{id}
+  Response should include: "ticket_types": [...]
+  ```
 
-**Returns for Each Organizer**:
-- Full name, email, date joined
-- Available balance and total earned (from wallets)
-- Total tickets sold (count from transactions where status='success')
-- Total events created
-- Last activity date
-- Status (active/inactive based on 30-day activity)
+- [ ] Verify database
+  ```sql
+  SELECT id, title, ticket_types FROM events LIMIT 5;
+  ```
 
-### 6. Auto-Expire Past Events
-**File**: `controllers/adminController.js` - `getAdminEvents()`
+- [ ] Test event expiry (should not expire invalid events)
 
-**Status**: ✅ FULLY IMPLEMENTED
+---
 
-**Features**:
-- ✅ Automatically updates events with past dates to status='ended'
-- ✅ Active events count only includes future dates
-- ✅ Organizer names properly joined from users table
+## Files Modified
 
-### 7. Historical Transaction Fix Script
-**File**: `fixHistoricalTransactions.js`
+1. `controllers/eventController.js`
+   - `createEvent()` - Extract and save ticket_types
+   - `getEventById()` - Select and return ticket_types
 
-**Status**: ✅ AVAILABLE
+2. `services/eventExpiryService.js`
+   - `updateExpiredEvents()` - Added safety check
 
-**Purpose**: Fix any historical transactions where platform_commission was calculated incorrectly
+3. `db/migrations/021_add_ticket_types_to_events.sql`
+   - New migration file
 
-**Usage**:
-```bash
-node fixHistoricalTransactions.js
-```
+---
 
-## 🔍 VERIFICATION CHECKLIST
+## Deployment Status
 
-### Database Schema
-- ✅ transactions table has all required columns:
-  - ticket_price
-  - processing_fee
-  - total_amount
-  - platform_commission
-  - organizer_earnings
-  - status
+- **Backend**: ✅ Ready (all code committed)
+- **Database**: 🔴 Pending (migration needs manual run)
+- **Frontend**: ℹ️ Needs to send `ticket_types` in POST request body
 
-### API Routes
-- ✅ GET /api/v1/admin/stats - Dashboard stats
-- ✅ GET /api/v1/admin/revenue - Revenue analytics
-- ✅ GET /api/v1/admin/events - All events with auto-expire
-- ✅ GET /api/v1/admin/events/pending - Pending events
-- ✅ POST /api/v1/admin/events/:id/approve - Approve event
-- ✅ POST /api/v1/admin/events/:id/reject - Reject event
-- ✅ GET /api/v1/admin/organizers - Organizers with stats
-- ✅ GET /api/v1/admin/diagnostics/transactions - Transaction diagnostics
+---
 
-### Payment Flow
-- ✅ Payment initiated with correct fee calculations
-- ✅ Transaction created with status='pending'
-- ✅ Payment verified with Squadco
-- ✅ Transaction updated to status='success'
-- ✅ Organizer wallet credited with organizer_earnings
-- ✅ Platform earnings recorded
-- ✅ Tickets generated
-- ✅ Emails sent
+## Next Steps
 
-## 📊 BUSINESS LOGIC VERIFICATION
+1. **User Action**: Run migration in Supabase dashboard
+2. **Verification**: Test endpoints after migration
+3. **Frontend**: Update event creation form to send ticket_types
+4. **Deployment**: Automatic on main push (already deployed)
 
-### For Every Ticket Transaction:
-```
-ticket_price = base ticket amount (organizer's money)
-processing_fee = ₦100 flat (paid by attendee, goes to platform)
-total_amount = ticket_price + processing_fee (what attendee pays)
-squadco_fee = 1.2% of total_amount (deducted by Squadco)
-platform_commission = 3% of ticket_price ONLY ✅
-organizer_earnings = ticket_price - platform_commission
-platform_net_profit = processing_fee - squadco_fee + platform_commission
-```
+---
 
-### Example Calculation:
-```
-Ticket Price: ₦2,000
-Processing Fee: ₦100
-Total Amount: ₦2,100
+## Documentation
 
-Squadco Fee: ₦2,100 × 1.2% = ₦25.20
-Platform Commission: ₦2,000 × 3% = ₦60 ✅ (NOT ₦63)
-Organizer Earnings: ₦2,000 - ₦60 = ₦1,940
-Platform Net Profit: ₦100 - ₦25.20 + ₦60 = ₦134.80
-```
-
-## 🚀 NEXT STEPS
-
-### If Revenue Shows ₦0:
-1. Check if there are any transactions with status='success' in the database
-2. Run the diagnostics endpoint: GET /api/v1/admin/diagnostics/transactions
-3. If no successful transactions exist, the ₦0 is correct
-4. If transactions exist but show ₦0, check the console logs in Vercel
-
-### If Historical Data Needs Fixing:
-1. Run: `node fixHistoricalTransactions.js`
-2. Or run SQL directly on Supabase:
-```sql
-UPDATE transactions
-SET
-  platform_commission = ticket_price * 0.03,
-  organizer_earnings = ticket_price - (ticket_price * 0.03)
-WHERE status = 'success';
-```
-
-### Testing Revenue Endpoint:
-1. Visit admin dashboard revenue page
-2. Check Vercel logs for detailed console output
-3. Verify transaction data is being fetched
-4. Verify calculations are correct
-
-## 📝 NOTES
-
-- All numeric stats are guaranteed to be numbers (0 if no data)
-- Platform commission is ALWAYS 3% of ticket_price only
-- Revenue calculations use exact business logic specified
-- All endpoints have comprehensive error handling
-- All endpoints have detailed console logging for debugging
-- Email notifications are sent on event approval/rejection
-- Auto-expire logic runs on every admin events fetch
-
+See `TICKET_TYPES_IMPLEMENTATION_COMPLETE.md` for:
+- Detailed implementation guide
+- Testing instructions
+- Frontend integration examples
+- Rollback plan
