@@ -133,6 +133,26 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 20;
 
+    // ✅ Helper function to calculate "time ago" with UTC parsing
+    function timeAgo(timestamp) {
+      // Force UTC parsing — append Z if no timezone info present
+      const ts = typeof timestamp === 'string' && !timestamp.endsWith('Z') && !timestamp.includes('+')
+        ? timestamp + 'Z'
+        : timestamp;
+      
+      const diffMs = Date.now() - new Date(ts).getTime();
+      const diffSec = Math.floor(diffMs / 1000);
+      const diffMin = Math.floor(diffSec / 60);
+      const diffHr = Math.floor(diffMin / 60);
+      const diffDays = Math.floor(diffHr / 24);
+      
+      if (diffSec < 10) return 'just now';
+      if (diffSec < 60) return `${diffSec}s ago`;
+      if (diffMin < 60) return `${diffMin}m ago`;
+      if (diffHr < 24) return `${diffHr}h ago`;
+      return `${diffDays}d ago`;
+    }
+
     // Fetch recent events (submissions, approvals, rejections, cancellations)
     const { data: recentEvents } = await supabaseAdmin
       .from('events')
@@ -210,6 +230,7 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
           icon: mapped.icon,
           message: `*${orgNames[event.organizer_id] || 'An organizer'}* ${mapped.label} ${event.title}`,
           timestamp: mapped.time,
+          timeAgo: timeAgo(mapped.time),
           link: `/admin/events/${event.id}`,
         });
       }
@@ -223,6 +244,7 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
         icon: '👤',
         message: `*${profile.full_name || profile.email}* joined as organizer`,
         timestamp: profile.created_at,
+        timeAgo: timeAgo(profile.created_at),
         link: `/admin/organizers`,
       });
     });
@@ -236,6 +258,7 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
         icon: '💰',
         message: `Ticket sold for *${eventTitle}* — ₦${parseFloat(transaction.total_amount).toLocaleString('en-NG')}`,
         timestamp: transaction.created_at,
+        timeAgo: timeAgo(transaction.created_at),
         link: `/admin/sales`,
       });
     });
@@ -250,6 +273,7 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
         icon: '💳',
         message: `*${orgName}* ${statusLabel} — ₦${parseFloat(withdrawal.amount).toLocaleString('en-NG')}`,
         timestamp: withdrawal.created_at,
+        timeAgo: timeAgo(withdrawal.created_at),
         link: `/admin/payouts`,
       });
     });

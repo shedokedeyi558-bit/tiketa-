@@ -21,18 +21,9 @@ export const updateExpiredEvents = async () => {
   try {
     console.log('⏰ Checking for expired events...');
 
-    // ✅ Get current time in Nigeria timezone (UTC+1)
-    // Create a date in UTC, then convert to Nigeria time (UTC+1)
-    const now = new Date();
-    
-    // Get the UTC offset in milliseconds
-    const utcTime = now.getTime();
-    
-    // Nigeria is UTC+1, so add 1 hour (3600000 ms)
-    const nigeriaTime = new Date(utcTime + (1 * 60 * 60 * 1000));
-    
-    console.log('🕐 Current UTC time:', now.toISOString());
-    console.log('🕐 Current Nigeria time (UTC+1):', nigeriaTime.toISOString());
+    // ✅ Use Date.now() for current UTC time (Vercel runs in UTC)
+    const nowMs = Date.now();
+    const BUFFER_MS = 5 * 60 * 1000; // 5 minute buffer to prevent edge cases
 
     // ✅ Fetch all active AND pending events
     const { data: eventsToCheck, error: fetchError } = await supabaseAdmin
@@ -70,22 +61,34 @@ export const updateExpiredEvents = async () => {
         
         // Build full datetime string
         const timeStr = event.end_time || '23:59:59';
-        const fullDateTimeStr = `${expiryDateStr.split('T')[0]}T${timeStr}+01:00`;
-        const eventEndDateTime = new Date(fullDateTimeStr);
+        const fullDateTimeStr = `${expiryDateStr.split('T')[0]}T${timeStr}`;
         
-        if (isNaN(eventEndDateTime.getTime())) continue;
+        // Force UTC parsing — append Z if no timezone info present
+        const eventEndTimestamp = fullDateTimeStr.includes('Z') || fullDateTimeStr.includes('+') 
+          ? fullDateTimeStr 
+          : fullDateTimeStr + 'Z';
+        
+        const eventEndMs = new Date(eventEndTimestamp).getTime();
+        
+        if (isNaN(eventEndMs)) continue;
         
         // Safety check: skip if end time is before start time (invalid event data)
         if (event.start_time) {
           const startDateStr = event.date?.split('T')[0];
-          const startFullStr = `${startDateStr}T${event.start_time}+01:00`;
-          const eventStartDateTime = new Date(startFullStr);
-          if (eventEndDateTime <= eventStartDateTime) continue; // skip invalid events
+          const startFullStr = `${startDateStr}T${event.start_time}`;
+          const startTimestamp = startFullStr.includes('Z') || startFullStr.includes('+')
+            ? startFullStr
+            : startFullStr + 'Z';
+          const eventStartMs = new Date(startTimestamp).getTime();
+          if (eventEndMs <= eventStartMs) continue; // skip invalid events
         }
         
-        if (eventEndDateTime < nigeriaTime) {
+        // Only expire if event ended more than 5 minutes ago
+        const hasEnded = (nowMs - eventEndMs) > BUFFER_MS;
+        
+        if (hasEnded) {
           expiredEventIds.push(event.id);
-          console.log(`⏰ Event expired: ${event.title} (${event.status}) - End: ${fullDateTimeStr}`);
+          console.log(`⏰ Event expired: ${event.title} (${event.status}) - End: ${eventEndTimestamp}`);
         }
       } catch (e) {
         console.warn(`⚠️ Error parsing event ${event.id}:`, e.message);
