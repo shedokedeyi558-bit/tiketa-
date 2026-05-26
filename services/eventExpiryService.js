@@ -11,9 +11,10 @@ const supabaseAdmin = createClient(
  * ✅ Update expired events - auto-expire events where date + end_time has passed
  * 
  * Expiry condition:
- * - event.end_date + event.end_time < current Nigeria time (UTC+1)
+ * - event.end_date + event.end_time < current UTC time
  * - event.status = 'active' OR 'pending'
- * - Update to status = 'cancelled'
+ * - Active events → Update to status = 'ended'
+ * - Pending events → Update to status = 'expired'
  * 
  * @returns {Promise<{success: boolean, expired: number, error: string|null}>}
  */
@@ -97,25 +98,47 @@ export const updateExpiredEvents = async () => {
 
     console.log(`🔍 Found ${expiredEventIds.length} expired events (active + pending)`);
 
-    // ✅ Update expired events to 'cancelled' status (both active and pending)
+    // ✅ Separate expired events by status and update accordingly
     if (expiredEventIds.length > 0) {
-      const { error: updateError } = await supabaseAdmin
+      // Get the events to check their current status
+      const { data: expiredEvents } = await supabaseAdmin
         .from('events')
-        .update({
-          status: 'cancelled'
-        })
+        .select('id, status')
         .in('id', expiredEventIds);
 
-      if (updateError) {
-        console.error('❌ Error updating expired events:', updateError);
-        return {
-          success: false,
-          expired: 0,
-          error: updateError.message,
-        };
-      }
+      if (expiredEvents && expiredEvents.length > 0) {
+        // Separate by status
+        const activeExpiredIds = expiredEvents.filter(e => e.status === 'active').map(e => e.id);
+        const pendingExpiredIds = expiredEvents.filter(e => e.status === 'pending').map(e => e.id);
 
-      console.log(`✅ Updated ${expiredEventIds.length} events to 'cancelled' status`);
+        // Update active events to 'ended'
+        if (activeExpiredIds.length > 0) {
+          const { error: activeError } = await supabaseAdmin
+            .from('events')
+            .update({ status: 'ended' })
+            .in('id', activeExpiredIds);
+
+          if (activeError) {
+            console.error('❌ Error updating active events to ended:', activeError);
+          } else {
+            console.log(`✅ Updated ${activeExpiredIds.length} active events to 'ended' status`);
+          }
+        }
+
+        // Update pending events to 'expired'
+        if (pendingExpiredIds.length > 0) {
+          const { error: pendingError } = await supabaseAdmin
+            .from('events')
+            .update({ status: 'expired' })
+            .in('id', pendingExpiredIds);
+
+          if (pendingError) {
+            console.error('❌ Error updating pending events to expired:', pendingError);
+          } else {
+            console.log(`✅ Updated ${pendingExpiredIds.length} pending events to 'expired' status`);
+          }
+        }
+      }
     }
 
     return {

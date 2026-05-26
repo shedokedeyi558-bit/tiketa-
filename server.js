@@ -325,7 +325,7 @@ app.get('/api/expire-check', async (req, res) => {
     if (result.success) {
       return res.status(200).json({
         success: true,
-        message: `Expiry check completed: ${result.expired} events cancelled`,
+        message: `Expiry check completed: ${result.expired} events expired (active→ended, pending→expired)`,
         expired: result.expired,
       });
     } else {
