@@ -685,6 +685,11 @@ export const getSalesFeed = async (req, res) => {
 // Get dashboard stats - Fetch all stats with detailed logging
 export const getDashboardStats = async (req, res) => {
   try {
+    // ✅ Prevent caching of dashboard stats
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     console.log('📊 Fetching admin dashboard stats...');
 
     // Default stats - ensure all values are numbers, never null/undefined
