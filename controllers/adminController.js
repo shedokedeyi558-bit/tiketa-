@@ -954,6 +954,12 @@ export const getDashboardStats = async (req, res) => {
 
     console.log('✅ Dashboard stats compiled successfully:', stats);
 
+    // ✅ Log pending actions specifically for debugging
+    console.log('🔔 PENDING ACTIONS DEBUG:', {
+      pendingWithdrawals: stats.pendingWithdrawals,
+      pendingEventApprovals: stats.pendingEventApprovals,
+    });
+
     return res.status(200).json({
       success: true,
       data: stats,
