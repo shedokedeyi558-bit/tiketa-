@@ -838,8 +838,13 @@ export const getDashboardStats = async (req, res) => {
           return {
             id: t.id,
             buyer_name: displayName,
-            event_name: eventMap[t.event_id] || 'Unknown Event',
+            event_title: eventMap[t.event_id] || 'Unknown Event',
             event_id: t.event_id,
+            ticket_price: Number(t.ticket_price || 0),
+            processing_fee: Number(t.processing_fee || 0),
+            platform_commission: Number(t.platform_commission || 0),
+            squadco_fee: Number(t.squadco_fee || 0),
+            organizer_earnings: Number(t.organizer_earnings || 0),
             amount: Number(t.total_amount || 0),
             created_at: t.created_at,
           };
