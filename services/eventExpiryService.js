@@ -125,17 +125,17 @@ export const updateExpiredEvents = async () => {
           }
         }
 
-        // Update pending events to 'expired'
+        // Update pending events to 'cancelled'
         if (pendingExpiredIds.length > 0) {
           const { error: pendingError } = await supabaseAdmin
             .from('events')
-            .update({ status: 'expired' })
+            .update({ status: 'cancelled' })
             .in('id', pendingExpiredIds);
 
           if (pendingError) {
-            console.error('❌ Error updating pending events to expired:', pendingError);
+            console.error('❌ Error updating pending events to cancelled:', pendingError);
           } else {
-            console.log(`✅ Updated ${pendingExpiredIds.length} pending events to 'expired' status`);
+            console.log(`✅ Updated ${pendingExpiredIds.length} pending events to 'cancelled' status`);
           }
         }
       }
