@@ -9,19 +9,10 @@ import { validateAndGetBankCode } from '../utils/bankCodes.js';
  */
 export const getWithdrawalsController = async (req, res) => {
   try {
-    console.log('📋 Fetching all withdrawal requests with organizer details...');
-
-    // 🔑 CRITICAL: Use join query to fetch organizer details in one query
-    // Join with profiles table (which contains organizer profiles)
+    // 🔑 CRITICAL: Fetch withdrawals first
     const { data: withdrawals, error } = await supabase
       .from('withdrawals')
-      .select(`
-        *,
-        profiles:organizer_id (
-          full_name,
-          email
-        )
-      `)
+      .select('*')
       .order('requested_at', { ascending: false });
 
     if (error) {
@@ -40,25 +31,27 @@ export const getWithdrawalsController = async (req, res) => {
       });
     }
 
+    // 🔑 CRITICAL: Fetch organizer profiles separately
+    const organizerIds = [...new Set((withdrawals || []).map(w => w.organizer_id).filter(Boolean))];
+    let profileMap = {};
+    if (organizerIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, full_name, email')
+        .in('id', organizerIds);
+      (profiles || []).forEach(p => { profileMap[p.id] = p; });
+    }
+
     // 🔑 CRITICAL: Map withdrawals to include organizer info at top level
     const enrichedWithdrawals = (withdrawals || []).map((w) => {
-      const organizerData = w.profiles;
+      const organizerData = profileMap[w.organizer_id];
       
-      console.log(`📝 Processing withdrawal ${w.id}:`, {
-        organizer_id: w.organizer_id,
-        organizer_data: organizerData,
-        organizer_name: organizerData?.full_name || 'Unknown',
-        organizer_email: organizerData?.email || 'Unknown',
-      });
-
       return {
         ...w,
         organizer_name: organizerData?.full_name || 'Unknown',
         organizer_email: organizerData?.email || 'Unknown',
       };
     });
-
-    console.log(`✅ Fetched ${enrichedWithdrawals.length} withdrawal requests with organizer details`);
 
     return res.status(200).json({
       success: true,
