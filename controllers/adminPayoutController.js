@@ -42,6 +42,9 @@ export const getWithdrawalsController = async (req, res) => {
       (profiles || []).forEach(p => { profileMap[p.id] = p; });
     }
 
+    console.log('[Payouts] profileMap:', JSON.stringify(profileMap));
+    console.log('[Payouts] first withdrawal:', JSON.stringify(withdrawals?.[0]));
+
     // 🔑 CRITICAL: Map withdrawals to include organizer info at top level
     const enrichedWithdrawals = (withdrawals || []).map((w) => {
       const organizerData = profileMap[w.organizer_id];
