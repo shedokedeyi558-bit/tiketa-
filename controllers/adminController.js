@@ -902,6 +902,12 @@ export const getDashboardStats = async (req, res) => {
         .select('id', { count: 'exact', head: true })
         .eq('status', 'pending');
       
+      console.log('[STATS] pendingApprovals:', {
+        count: pendingEventsResult.count,
+        error: pendingEventsResult.error,
+        status: pendingEventsResult.status,
+      });
+      
       if (pendingEventsResult.error) {
         console.error('❌ Pending events query error:', {
           message: pendingEventsResult.error.message,
