@@ -12,12 +12,12 @@ export const getWithdrawalsController = async (req, res) => {
     console.log('📋 Fetching all withdrawal requests with organizer details...');
 
     // 🔑 CRITICAL: Use join query to fetch organizer details in one query
-    // Try joining with users table (which contains organizer profiles)
+    // Join with profiles table (which contains organizer profiles)
     const { data: withdrawals, error } = await supabase
       .from('withdrawals')
       .select(`
         *,
-        users:organizer_id (
+        profiles:organizer_id (
           full_name,
           email
         )
@@ -42,7 +42,7 @@ export const getWithdrawalsController = async (req, res) => {
 
     // 🔑 CRITICAL: Map withdrawals to include organizer info at top level
     const enrichedWithdrawals = (withdrawals || []).map((w) => {
-      const organizerData = w.users;
+      const organizerData = w.profiles;
       
       console.log(`📝 Processing withdrawal ${w.id}:`, {
         organizer_id: w.organizer_id,
