@@ -35,15 +35,14 @@ export const getWithdrawalsController = async (req, res) => {
     const organizerIds = [...new Set((withdrawals || []).map(w => w.organizer_id).filter(Boolean))];
     let profileMap = {};
     if (organizerIds.length > 0) {
-      const { data: profiles } = await supabase
+      const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('id, full_name, email')
         .in('id', organizerIds);
-      (profiles || []).forEach(p => { profileMap[p.id] = p; });
+      if (!profilesError && profiles) {
+        profiles.forEach(p => { profileMap[p.id] = p; });
+      }
     }
-
-    console.log('[Payouts] profileMap:', JSON.stringify(profileMap));
-    console.log('[Payouts] first withdrawal:', JSON.stringify(withdrawals?.[0]));
 
     // 🔑 CRITICAL: Map withdrawals to include organizer info at top level
     const enrichedWithdrawals = (withdrawals || []).map((w) => {
