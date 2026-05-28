@@ -28,6 +28,8 @@ export const initiatePayment = async (req, res) => {
 
     const { eventId, cartItems, attendees, buyerEmail, buyerName } = req.body;
 
+    console.log('[Payment] cartItems received:', JSON.stringify(cartItems));
+
     // Validate inputs
     if (!eventId || !cartItems || !cartItems.length || !buyerEmail || !buyerName) {
       console.log('❌ Validation failed: Missing fields', { eventId, cartItems, buyerEmail, buyerName });
@@ -103,6 +105,7 @@ export const initiatePayment = async (req, res) => {
 
     // ✅ Calculate fees according to exact business logic
     const ticketPrice = cartItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    console.log('[Payment] ticketPrice calculated:', ticketPrice);
     const processingFee = ticketPrice <= 5000
       ? FLAT_PROCESSING_FEE
       : (ticketPrice * PERCENTAGE_PROCESSING_FEE) / 100;
