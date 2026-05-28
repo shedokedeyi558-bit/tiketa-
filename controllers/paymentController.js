@@ -568,6 +568,7 @@ export const verifyPayment = async (req, res) => {
  */
 async function processVerifiedPayment(transaction, squadcoVerification, req) {
   try {
+    console.log('[ProcessVerified] START - squadco_response:', JSON.stringify(transaction?.squadco_response));
     // Parse out our stored attendees/cart BEFORE overwriting squadco_response
     // CRITICAL: Extract and preserve original data first
     const originalCart = transaction.squadco_response?.cartItems || [];
