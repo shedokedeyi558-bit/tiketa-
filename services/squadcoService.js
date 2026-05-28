@@ -72,8 +72,8 @@ export const verifySquadcoPayment = async (reference) => {
     }
 
     // Validate required fields
-    if (!data.amount || !data.reference) {
-      console.error('❌ Missing required fields in Squadco response:', { amount: data.amount, reference: data.reference });
+    if ((!data.transaction_amount && !data.amount) || !data.transaction_ref) {
+      console.error('❌ Missing required fields in Squadco response:', { transaction_amount: data.transaction_amount, amount: data.amount, transaction_ref: data.transaction_ref });
       return {
         success: false,
         error: 'Missing required fields in Squadco response',
@@ -83,8 +83,8 @@ export const verifySquadcoPayment = async (reference) => {
 
     return {
       success: true,
-      reference: data.reference,
-      amount: data.amount / 100, // Convert from kobo to Naira if needed
+      reference: data.transaction_ref || data.reference,
+      amount: (data.transaction_amount || data.amount || 0) / 100, // Convert from kobo to Naira if needed
       status,
       response: data,
     };

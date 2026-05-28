@@ -568,18 +568,28 @@ export const verifyPayment = async (req, res) => {
  */
 async function processVerifiedPayment(transaction, squadcoVerification, req) {
   try {
-    // Parse out our stored attendees/cart before overwriting squadco_response
-    const cartItems = transaction.squadco_response?.cartItems || [];
-    const attendees = transaction.squadco_response?.attendees || [{ name: transaction.buyer_name, email: transaction.buyer_email }];
-    const totalTicketsSold = cartItems.reduce((acc, item) => acc + item.quantity, 0) || 1;
+    // Parse out our stored attendees/cart BEFORE overwriting squadco_response
+    // CRITICAL: Extract and preserve original data first
+    const originalCart = transaction.squadco_response?.cartItems || [];
+    const originalAttendees = transaction.squadco_response?.attendees || [];
+    
+    // Use preserved data for calculations
+    const cartItems = originalCart.length > 0 ? originalCart : [];
+    const attendees = originalAttendees.length > 0 ? originalAttendees : [{ name: transaction.buyer_name, email: transaction.buyer_email }];
+    const totalTicketsSold = cartItems.length > 0 ? cartItems.reduce((acc, item) => acc + (item.quantity || 1), 0) : 1;
 
     // 1. Update transaction status to success
+    // CRITICAL: Preserve original cartItems and attendees in the update
     await supabase
       .from('transactions')
       .update({
         status: 'success',
         squadco_reference: squadcoVerification.reference,
-        squadco_response: { ...squadcoVerification.response, orig_cart: cartItems }, // Safe merge
+        squadco_response: { 
+          ...squadcoVerification.response, 
+          orig_cart: originalCart,
+          orig_attendees: originalAttendees,
+        }, // Safe merge with preserved cart
         verified_at: new Date().toISOString(),
         verified_by: 'squadco_api',
       })
