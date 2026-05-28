@@ -177,14 +177,23 @@ export const verifySquadPayment = async (transactionRef) => {
     }
 
     // Amount is in kobo, convert to Naira for comparison
-    const amountInNaira = Math.round(paymentData.amount / 100);
+    // CRITICAL: Squad returns transaction_amount, not amount
+    const amountInKobo = parseFloat(paymentData.transaction_amount || paymentData.amount || 0);
+    const amountInNaira = Math.round(amountInKobo / 100);
+
+    console.log('💰 Amount conversion:', {
+      transaction_amount: paymentData.transaction_amount,
+      amount: paymentData.amount,
+      amountInKobo,
+      amountInNaira,
+    });
 
     return {
       success: true,
       status: paymentStatus,
       reference: paymentData.transaction_ref || transactionRef,
       amount: amountInNaira, // Return in Naira
-      amountInKobo: paymentData.amount, // Also return raw kobo for reference
+      amountInKobo: amountInKobo, // Also return raw kobo for reference
       email: paymentData.customer_email,
       message: 'Payment verified successfully',
       rawData: paymentData,

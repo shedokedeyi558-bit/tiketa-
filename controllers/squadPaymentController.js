@@ -517,13 +517,20 @@ export const verifyPaymentController = async (req, res) => {
       if (eventFetchError) {
         console.error('⚠️ Failed to fetch event:', eventFetchError);
       } else {
+        // Extract quantity from squadco_response.cartItems
+        const rawResponse = transaction.squadco_response || {};
+        const cartItems = rawResponse.cartItems || rawResponse.orig_cart || rawResponse.cart || [];
+        const ticketQuantity = cartItems.length > 0 
+          ? cartItems.reduce((acc, item) => acc + (parseInt(item.quantity) || 1), 0)
+          : 1;
+        
         const currentTicketsSold = event?.tickets_sold || 0;
-        const ticketQuantity = transaction.quantity || 1; // Default to 1 if not specified
         const newTicketsSold = currentTicketsSold + ticketQuantity;
 
         console.log('📊 Ticket count update:', {
           event_id: transaction.event_id,
           current_tickets_sold: currentTicketsSold,
+          cartItems_length: cartItems.length,
           quantity_purchased: ticketQuantity,
           new_tickets_sold: newTicketsSold,
           total_tickets: event?.total_tickets,
