@@ -606,6 +606,29 @@ async function processVerifiedPayment(transaction, squadcoVerification, req) {
       })
       .eq('id', transaction.id);
 
+    // Update transaction with Squad's verified amount
+    const squadAmount = (squadcoVerification.response?.transaction_amount || 0) / 100;
+    if (squadAmount > 0 && squadAmount !== transaction.total_amount) {
+      const correctedTicketPrice = squadAmount - transaction.processing_fee;
+      const correctedPlatformCommission = correctedTicketPrice * 0.03;
+      const correctedOrganizerEarnings = correctedTicketPrice * 0.97;
+      await supabase
+        .from('transactions')
+        .update({
+          total_amount: squadAmount,
+          ticket_price: correctedTicketPrice,
+          platform_commission: correctedPlatformCommission,
+          organizer_earnings: correctedOrganizerEarnings,
+        })
+        .eq('id', transaction.id);
+      
+      // Update transaction object with corrected values for downstream processing
+      transaction.total_amount = squadAmount;
+      transaction.ticket_price = correctedTicketPrice;
+      transaction.platform_commission = correctedPlatformCommission;
+      transaction.organizer_earnings = correctedOrganizerEarnings;
+    }
+
     // 2. Credit organizer wallet
     await creditOrganizerWallet(transaction);
 
