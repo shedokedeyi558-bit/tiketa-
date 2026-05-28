@@ -31,6 +31,8 @@ export const initiatePaymentController = async (req, res) => {
     // 🔑 CRITICAL: Log incoming request
     console.log('📥 REQUEST BODY:', req.body);
     console.log('🎯 EVENT ID RECEIVED:', eventId);
+    console.log('💰 AMOUNT RECEIVED FROM FRONTEND:', amount);
+    console.log('🛒 CART ITEMS RECEIVED:', JSON.stringify(cartItems));
 
     // 🔑 CRITICAL: Validate eventId is present
     if (!eventId) {
