@@ -308,7 +308,7 @@ export const verifyPayment = async (req, res) => {
 
       const { data, error } = await supabase
         .from('transactions')
-        .select('*')
+        .select('id, reference, status, event_id, organizer_id, buyer_email, buyer_name, ticket_price, processing_fee, total_amount, platform_commission, squadco_fee, organizer_earnings, squadco_response')
         .eq('reference', reference)
         .maybeSingle();
 
@@ -571,8 +571,8 @@ async function processVerifiedPayment(transaction, squadcoVerification, req) {
     // Parse out our stored attendees/cart BEFORE overwriting squadco_response
     // CRITICAL: Extract and preserve original data first
     const originalCart = transaction.squadco_response?.cartItems || [];
-    console.log('[Verify] squadco_response keys:', Object.keys(transaction.squadco_response || {}));
-    console.log('[Verify] originalCart:', JSON.stringify(originalCart));
+    console.log('[Verify] Full squadco_response:', JSON.stringify(transaction.squadco_response));
+    console.log('[Verify] originalCart length:', originalCart.length);
     const originalAttendees = transaction.squadco_response?.attendees || [];
     
     // Use preserved data for calculations
