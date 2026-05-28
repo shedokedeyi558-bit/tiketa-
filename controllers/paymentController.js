@@ -107,7 +107,11 @@ export const initiatePayment = async (req, res) => {
     console.log('🔑 GENERATED REFERENCE:', reference);
 
     // ✅ Calculate fees according to exact business logic
-    const ticketPrice = cartItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    const ticketPrice = cartItems.reduce((acc, item) => {
+      const price = parseFloat(item.price) || 0;
+      const qty = parseInt(item.quantity) || 1;
+      return acc + (price * qty);
+    }, 0);
     const processingFee = ticketPrice <= 5000
       ? FLAT_PROCESSING_FEE
       : (ticketPrice * PERCENTAGE_PROCESSING_FEE) / 100;
