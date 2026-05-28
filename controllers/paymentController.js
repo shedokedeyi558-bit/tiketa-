@@ -28,6 +28,11 @@ export const initiatePayment = async (req, res) => {
 
     const { eventId, cartItems, attendees, buyerEmail, buyerName } = req.body;
 
+    console.log('[Payment Init] cartItems:', JSON.stringify(cartItems));
+    console.log('[Payment Init] ticketPrice:', ticketPrice);
+    console.log('[Payment Init] processingFee:', processingFee);
+    console.log('[Payment Init] totalAmount:', totalAmount);
+
     // Validate inputs
     if (!eventId || !cartItems || !cartItems.length || !buyerEmail || !buyerName) {
       console.log('❌ Validation failed: Missing fields', { eventId, cartItems, buyerEmail, buyerName });
