@@ -116,6 +116,11 @@ app.use((req, res, next) => {
   next();
 });
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 // API Routes
 app.use(`/api/${process.env.API_VERSION}/auth`, authRoutes);
 app.use(`/api/${process.env.API_VERSION}/events`, eventRoutes);
