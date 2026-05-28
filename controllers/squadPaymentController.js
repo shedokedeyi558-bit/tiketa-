@@ -123,8 +123,20 @@ export const initiatePaymentController = async (req, res) => {
     // 🔑 CRITICAL: Create transaction record in database BEFORE calling Squad
     console.log('⏳ Step 3: Creating transaction record in database...');
     
-    // 🔑 CRITICAL: Extract ticket_price from cartItems
-    const ticketPrice = cartItems?.[0]?.price ?? cartItems?.[0]?.ticket_price ?? 0;
+    // 🔑 CRITICAL: Calculate total ticket price from ALL cartItems with quantities
+    const ticketPrice = cartItems && cartItems.length > 0
+      ? cartItems.reduce((acc, item) => {
+          const price = parseFloat(item.price || item.ticket_price || 0);
+          const qty = parseInt(item.quantity || 1);
+          return acc + (price * qty);
+        }, 0)
+      : 0;
+    
+    console.log('💰 Ticket price calculation:', {
+      cartItems_length: cartItems?.length,
+      cartItems,
+      calculated_ticketPrice: ticketPrice,
+    });
     
     // 🔑 CRITICAL: Calculate fees and commission
     const processingFee = ticketPrice <= 10000 ? 100 : (ticketPrice * 1.2) / 100;
