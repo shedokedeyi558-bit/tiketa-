@@ -571,12 +571,15 @@ async function processVerifiedPayment(transaction, squadcoVerification, req) {
     // Parse out our stored attendees/cart BEFORE overwriting squadco_response
     // CRITICAL: Extract and preserve original data first
     const originalCart = transaction.squadco_response?.cartItems || [];
+    console.log('[Verify] squadco_response keys:', Object.keys(transaction.squadco_response || {}));
+    console.log('[Verify] originalCart:', JSON.stringify(originalCart));
     const originalAttendees = transaction.squadco_response?.attendees || [];
     
     // Use preserved data for calculations
     const cartItems = originalCart.length > 0 ? originalCart : [];
     const attendees = originalAttendees.length > 0 ? originalAttendees : [{ name: transaction.buyer_name, email: transaction.buyer_email }];
     const totalTicketsSold = cartItems.length > 0 ? cartItems.reduce((acc, item) => acc + (item.quantity || 1), 0) : 1;
+    console.log('[Verify] totalTicketsSold:', totalTicketsSold);
 
     // 1. Update transaction status to success
     // CRITICAL: Preserve original cartItems and attendees in the update
