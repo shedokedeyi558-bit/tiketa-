@@ -81,10 +81,20 @@ export const verifySquadcoPayment = async (reference) => {
       };
     }
 
+    // Extract and convert amount from kobo to Naira
+    const amountInKobo = parseFloat(data.transaction_amount || data.amount || 0);
+    const amountInNaira = amountInKobo / 100;
+
+    console.log('💰 Amount conversion:', {
+      transaction_amount: data.transaction_amount,
+      amountInKobo,
+      amountInNaira,
+    });
+
     return {
       success: true,
       reference: data.transaction_ref || data.reference,
-      amount: (data.transaction_amount || data.amount || 0) / 100, // Convert from kobo to Naira if needed
+      amount: amountInNaira,
       status,
       response: data,
     };
