@@ -41,7 +41,7 @@ const verifyLimiter = rateLimit({
  * POST /api/v1/payments/squad/initiate
  * Initialize a new payment
  */
-router.post('/initiate', initiatePaymentController); // Rate limiter temporarily disabled for testing
+router.post('/initiate', paymentLimiter, initiatePaymentController);
 
 /**
  * POST /api/v1/payments/squad/verify
