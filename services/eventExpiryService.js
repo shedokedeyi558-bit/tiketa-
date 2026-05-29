@@ -100,7 +100,7 @@ export const updateExpiredEvents = async () => {
         
         if (hasEnded) {
           expiredEventIds.push(event.id);
-          console.log(`⏰ Event expired: ${event.title} (${event.status}) - End: ${eventEndTimestamp}`);
+          console.log(`⏰ Event expired: ${event.title} (${event.status})`);
         }
       } catch (e) {
         console.warn(`⚠️ Error parsing event ${event.id}:`, e.message);
