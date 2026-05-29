@@ -370,7 +370,15 @@ export const verifyPayment = async (req, res) => {
       });
     }
 
-    // Check if already verified
+    // Check if already verified or processing
+    if (transaction.status === 'processing') {
+      return res.json({
+        success: true,
+        message: 'Payment verification in progress',
+        data: { reference, status: 'processing' }
+      });
+    }
+
     if (transaction.status === 'success') {
       // Return existing ticket
       const { data: ticket, error: ticketError } = await supabase
@@ -399,6 +407,37 @@ export const verifyPayment = async (req, res) => {
     if (transaction.status === 'failed') {
       return res.status(400).json({ error: 'Payment failed' });
     }
+
+    // Lock transaction to prevent duplicate processing
+    console.log('🔒 Attempting to lock transaction for processing...');
+    const { error: lockError } = await supabase
+      .from('transactions')
+      .update({ status: 'processing' })
+      .eq('id', transaction.id)
+      .eq('status', 'pending'); // Only update if still pending
+
+    if (lockError) {
+      console.error('❌ Failed to lock transaction:', lockError);
+    }
+
+    // Re-fetch to confirm we got the lock
+    const { data: lockedTx } = await supabase
+      .from('transactions')
+      .select('status')
+      .eq('id', transaction.id)
+      .single();
+
+    if (lockedTx?.status !== 'processing') {
+      // Another request got the lock first — wait for it to complete
+      console.warn('⚠️ Another request is processing this transaction');
+      return res.json({
+        success: true,
+        message: 'Payment verification in progress',
+        data: { reference, status: 'processing' }
+      });
+    }
+
+    console.log('✅ Transaction locked for processing');
 
     // Query Squadco API to verify payment status
     console.log('🔄 Verifying with Squadco API...');
