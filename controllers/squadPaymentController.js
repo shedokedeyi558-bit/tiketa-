@@ -158,10 +158,6 @@ export const initiatePaymentController = async (req, res) => {
       platformCommission: platformCommission.toFixed(2),
       organizerEarnings: organizerEarnings.toFixed(2),
     });
-      squadcoFee: squadcoFee.toFixed(2),
-      platformCommission: platformCommission.toFixed(2),
-      organizerEarnings: organizerEarnings.toFixed(2),
-    });
     
     // Create timeout promise for transaction insert
     const txTimeoutPromise = new Promise((_, reject) =>
