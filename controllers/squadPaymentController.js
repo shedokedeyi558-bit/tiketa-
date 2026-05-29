@@ -159,15 +159,6 @@ export const initiatePaymentController = async (req, res) => {
       organizerEarnings: organizerEarnings.toFixed(2),
     });
     
-    // Extract ticket_type_id from first cart item (for single ticket type purchases)
-    // For multiple ticket types, we'll need to create separate transactions per type
-    const ticketTypeId = cartItems && cartItems.length > 0 ? cartItems[0].id : null;
-    
-    console.log('🎫 Ticket type info:', {
-      ticketTypeId,
-      cartItemsCount: cartItems?.length,
-    });
-    
     // Create timeout promise for transaction insert
     const txTimeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Supabase transaction insert timed out after 5 seconds')), 5000)
@@ -181,7 +172,6 @@ export const initiatePaymentController = async (req, res) => {
             reference, // ✅ Already normalized
             event_id: eventId, // ✅ CRITICAL: Include event_id
             organizer_id: event.organizer_id, // ✅ Include organizer_id
-            ticket_type_id: ticketTypeId, // ✅ Include ticket_type_id
             buyer_email: buyerEmail,
             buyer_name: buyerName || buyerEmail.split('@')[0],
             ticket_price: ticketPrice,
