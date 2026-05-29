@@ -650,7 +650,17 @@ async function processVerifiedPayment(transaction, squadcoVerification, req) {
     if (squadAmount > 0 && squadAmount !== transaction.total_amount) {
       const correctedTicketPrice = squadAmount - transaction.processing_fee;
       const correctedPlatformCommission = correctedTicketPrice * 0.03;
+      // ✅ CRITICAL: Organizer gets 97% of ticket price ONLY, not affected by Squad fee
       const correctedOrganizerEarnings = correctedTicketPrice * 0.97;
+      
+      console.log('💰 Amount correction:', {
+        squadAmount,
+        processingFee: transaction.processing_fee,
+        correctedTicketPrice,
+        correctedPlatformCommission: correctedPlatformCommission.toFixed(2),
+        correctedOrganizerEarnings: correctedOrganizerEarnings.toFixed(2),
+      });
+      
       await supabase
         .from('transactions')
         .update({
