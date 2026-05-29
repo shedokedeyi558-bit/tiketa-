@@ -56,6 +56,9 @@ const supabaseAdmin = createClient(
 // Initialize express app
 const app = express();
 
+// Trust proxy - fixes IP detection behind Render's proxy
+app.set('trust proxy', true);
+
 // Middleware
 const allowedOrigins = [
   'http://localhost:5173',

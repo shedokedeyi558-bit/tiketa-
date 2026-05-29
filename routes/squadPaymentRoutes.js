@@ -12,7 +12,7 @@ const router = express.Router();
 // Rate limiting middleware
 const paymentLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 requests per window
+  max: 50, // 50 requests per window
   message: 'Too many payment attempts, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
@@ -41,7 +41,7 @@ const verifyLimiter = rateLimit({
  * POST /api/v1/payments/squad/initiate
  * Initialize a new payment
  */
-router.post('/initiate', paymentLimiter, initiatePaymentController);
+router.post('/initiate', initiatePaymentController); // Rate limiter temporarily disabled for testing
 
 /**
  * POST /api/v1/payments/squad/verify
