@@ -70,6 +70,18 @@ export const updateExpiredEvents = async () => {
           : fullDateTimeStr + '+01:00'); // Treat as WAT (UTC+1)
         const eventEndMs = eventEndWAT.getTime();
         
+        console.log('[Expiry] Event:', event.title, {
+          end_date: event.end_date,
+          end_time: event.end_time,
+          expiryDateStr,
+          timeStr,
+          fullDateTimeStr,
+          eventEndMs,
+          nowMs: Date.now(),
+          diffMinutes: Math.floor((Date.now() - eventEndMs) / 60000),
+          hasEnded: (nowMs - eventEndMs) > BUFFER_MS,
+        });
+        
         if (isNaN(eventEndMs)) continue;
         
         // Safety check: skip if end time is before start time (invalid event data)
