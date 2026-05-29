@@ -112,9 +112,9 @@ export const initiatePayment = async (req, res) => {
       const qty = parseInt(item.quantity) || 1;
       return acc + (price * qty);
     }, 0);
-    const processingFee = ticketPrice <= 5000
+    const processingFee = Number(ticketPrice) <= 5000
       ? FLAT_PROCESSING_FEE
-      : (ticketPrice * PERCENTAGE_PROCESSING_FEE) / 100;
+      : (Number(ticketPrice) * PERCENTAGE_PROCESSING_FEE) / 100;
     const totalAmount = ticketPrice + processingFee;
     const squadcoFee = (totalAmount * SQUADCO_RATE) / 100;
     const platformCommission = (ticketPrice * PLATFORM_COMMISSION_PERCENTAGE) / 100;
