@@ -134,6 +134,7 @@ export const initiatePayment = async (req, res) => {
 
     // Create pending transaction record
     console.log('Creating transaction record...');
+    console.log('[InitCart] storing cartItems in squadco_response:', JSON.stringify(cartItems));
     const { data: transaction, error: txError } = await supabase
       .from('transactions')
       .insert([
@@ -729,6 +730,9 @@ async function processVerifiedPayment(transaction, squadcoVerification, req) {
         .update({ ticket_types: updatedTicketTypes })
         .eq('id', transaction.event_id);
     }
+
+    console.log('[TicketUpdate] cartItems:', JSON.stringify(cartItems));
+    console.log('[TicketUpdate] eventData ticket_types:', JSON.stringify(eventData?.ticket_types));
 
     // 6. Fetch event details for email
     const { data: event } = await supabase
