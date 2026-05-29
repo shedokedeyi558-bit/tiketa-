@@ -141,8 +141,8 @@ export const initiatePaymentController = async (req, res) => {
     });
     
     // 🔑 CRITICAL: Calculate fees and commission
-    // Processing fee: ₦100 flat for tickets ≤ ₦10,000, or 1.5% for > ₦10,000
-    const processingFee = ticketPrice <= 10000 ? 100 : (ticketPrice * 1.5) / 100;
+    // Processing fee: ₦100 flat for tickets ≤ ₦5,000, or 1.5% for > ₦5,000
+    const processingFee = ticketPrice <= 5000 ? 100 : Math.round((ticketPrice * 1.5) / 100);
     const totalAmount = ticketPrice + processingFee;
     const squadcoFee = (totalAmount * 1.2) / 100;
     const platformCommission = (ticketPrice * 3) / 100;
