@@ -64,12 +64,11 @@ export const updateExpiredEvents = async () => {
         const timeStr = event.end_time || '23:59:59';
         const fullDateTimeStr = `${expiryDateStr.split('T')[0]}T${timeStr}`;
         
-        // Force UTC parsing — append Z if no timezone info present
-        const eventEndTimestamp = fullDateTimeStr.includes('Z') || fullDateTimeStr.includes('+') 
+        // end_time is stored in WAT (UTC+1), convert to UTC by treating as WAT
+        const eventEndWAT = new Date(fullDateTimeStr.includes('Z') || fullDateTimeStr.includes('+') 
           ? fullDateTimeStr 
-          : fullDateTimeStr + 'Z';
-        
-        const eventEndMs = new Date(eventEndTimestamp).getTime();
+          : fullDateTimeStr + '+01:00'); // Treat as WAT (UTC+1)
+        const eventEndMs = eventEndWAT.getTime();
         
         if (isNaN(eventEndMs)) continue;
         
