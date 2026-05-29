@@ -828,6 +828,19 @@ async function creditOrganizerWallet(transaction) {
 
     console.log('✅ Organizer validated for wallet credit');
 
+    // Check if already credited for this transaction
+    const { data: existingCredit } = await supabase
+      .from('wallet_transactions')
+      .select('id')
+      .eq('reference_id', transaction.id)
+      .eq('type', 'credit')
+      .maybeSingle();
+
+    if (existingCredit) {
+      console.log('⚠️ Wallet already credited for transaction:', transaction.id);
+      return;
+    }
+
     // Get or create wallet
     let { data: wallet } = await supabase
       .from('wallets')
