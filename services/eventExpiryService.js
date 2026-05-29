@@ -88,10 +88,10 @@ export const updateExpiredEvents = async () => {
         if (event.start_time) {
           const startDateStr = event.date?.split('T')[0];
           const startFullStr = `${startDateStr}T${event.start_time}`;
-          const startTimestamp = startFullStr.includes('Z') || startFullStr.includes('+')
+          const eventStartWAT = new Date(startFullStr.includes('Z') || startFullStr.includes('+')
             ? startFullStr
-            : startFullStr + 'Z';
-          const eventStartMs = new Date(startTimestamp).getTime();
+            : startFullStr + '+01:00'); // Treat as WAT (UTC+1)
+          const eventStartMs = eventStartWAT.getTime();
           if (eventEndMs <= eventStartMs) continue; // skip invalid events
         }
         
