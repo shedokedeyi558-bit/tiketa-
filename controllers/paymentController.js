@@ -705,6 +705,31 @@ async function processVerifiedPayment(transaction, squadcoVerification, req) {
         .eq('id', transaction.event_id);
     }
 
+    // Update available count in ticket_types JSONB
+    const { data: eventData } = await supabase
+      .from('events')
+      .select('ticket_types')
+      .eq('id', transaction.event_id)
+      .single();
+
+    if (eventData?.ticket_types) {
+      const updatedTicketTypes = eventData.ticket_types.map(tt => {
+        const cartItem = cartItems.find(ci => ci.id === tt.id);
+        if (cartItem) {
+          return {
+            ...tt,
+            available: Math.max(0, (tt.available ?? tt.quantity) - (parseInt(cartItem.quantity) || 1))
+          };
+        }
+        return tt;
+      });
+
+      await supabase
+        .from('events')
+        .update({ ticket_types: updatedTicketTypes })
+        .eq('id', transaction.event_id);
+    }
+
     // 6. Fetch event details for email
     const { data: event } = await supabase
       .from('events')
