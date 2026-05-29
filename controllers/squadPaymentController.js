@@ -146,13 +146,18 @@ export const initiatePaymentController = async (req, res) => {
     const totalAmount = ticketPrice + processingFee;
     const squadcoFee = (totalAmount * 1.2) / 100;
     const platformCommission = (ticketPrice * 3) / 100;
-    const organizerEarnings = totalAmount - squadcoFee - platformCommission;
+    // ✅ CRITICAL FIX: Organizer gets 97% of ticket price ONLY (not affected by fees)
+    const organizerEarnings = ticketPrice * 0.97;
     const platformNetProfit = platformCommission;
     
     console.log('💰 Fee calculation:', {
       ticketPrice,
       processingFee,
       totalAmount,
+      squadcoFee: squadcoFee.toFixed(2),
+      platformCommission: platformCommission.toFixed(2),
+      organizerEarnings: organizerEarnings.toFixed(2),
+    });
       squadcoFee: squadcoFee.toFixed(2),
       platformCommission: platformCommission.toFixed(2),
       organizerEarnings: organizerEarnings.toFixed(2),
