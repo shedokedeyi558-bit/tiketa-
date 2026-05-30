@@ -1562,7 +1562,7 @@ export const getAdminOrganizerById = async (req, res) => {
 
     const { data: transactions } = await supabase
       .from('transactions')
-      .select('ticket_price, organizer_earnings, created_at, status')
+      .select('id, ticket_price, total_amount, organizer_earnings, created_at, status')
       .eq('organizer_id', id)
       .eq('status', 'success');
 
@@ -1581,12 +1581,18 @@ export const getAdminOrganizerById = async (req, res) => {
     const totalEarnings = (transactions || []).reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0);
     const ticketsSold = (transactions || []).length;
 
+    // Map transactions to include 'amount' field for frontend compatibility
+    const mappedTransactions = (transactions || []).map(t => ({
+      ...t,
+      amount: t.total_amount, // Map total_amount to amount for frontend
+    }));
+
     return res.status(200).json({
       success: true,
       data: {
         ...organizer,
         events: events || [],
-        transactions: transactions || [],
+        transactions: mappedTransactions,
         wallet: wallet?.[0] || null,
         withdrawals: withdrawals || [],
         stats: {
