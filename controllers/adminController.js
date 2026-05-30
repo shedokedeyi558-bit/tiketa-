@@ -1556,13 +1556,13 @@ export const getAdminOrganizerById = async (req, res) => {
 
     const { data: events } = await supabase
       .from('events')
-      .select('id, title, date, status, total_tickets')
+      .select('id, title, date, status, total_tickets, tickets_sold')
       .eq('organizer_id', id)
       .order('created_at', { ascending: false });
 
     const { data: transactions } = await supabase
       .from('transactions')
-      .select('id, ticket_price, total_amount, organizer_earnings, created_at, status')
+      .select('id, event_id, ticket_price, total_amount, organizer_earnings, created_at, status')
       .eq('organizer_id', id)
       .eq('status', 'success');
 
