@@ -1587,20 +1587,27 @@ export const getAdminOrganizerById = async (req, res) => {
       amount: t.total_amount, // Map total_amount to amount for frontend
     }));
 
+    // Extract wallet data
+    const walletData = wallet?.[0] || {};
+
     return res.status(200).json({
       success: true,
       data: {
         ...organizer,
+        // Flatten stats to top level for frontend compatibility
+        total_events: (events || []).length,
+        total_tickets_sold: ticketsSold,
+        total_revenue: totalRevenue,
+        total_earnings: totalEarnings,
+        // Flatten wallet data to top level
+        available_balance: walletData.available_balance || 0,
+        pending_balance: walletData.pending_balance || 0,
+        total_earned: walletData.total_earned || 0,
+        // Keep nested arrays
         events: events || [],
         transactions: mappedTransactions,
-        wallet: wallet?.[0] || null,
+        wallet: walletData,
         withdrawals: withdrawals || [],
-        stats: {
-          total_events: (events || []).length,
-          tickets_sold: ticketsSold,
-          total_revenue: totalRevenue,
-          total_earnings: totalEarnings,
-        },
       },
     });
   } catch (error) {
