@@ -60,18 +60,21 @@ export const updateExpiredEvents = async () => {
         const expiryDateStr = event.end_date || event.date;
         if (!expiryDateStr) continue;
         
-        // Log the fields being used
-        console.log('[EXPIRE FIELDS]', event.title, 'end_time:', event.end_time, 'end_date:', event.end_date);
+        // Extract date part from end_date (take only YYYY-MM-DD)
+        const datePart = (event.end_date || event.date || '').split('T')[0];
+        // Extract time part from end_time
+        const timePart = event.end_time || '23:59:59';
+        // Combine into full datetime string
+        const fullDateTimeStr = datePart + 'T' + timePart;
         
-        // Build full datetime string
-        const timeStr = event.end_time || '23:59:59';
-        const fullDateTimeStr = `${expiryDateStr.split('T')[0]}T${timeStr}`;
-        
-        // Parse end time: stored as Nigerian local time (WAT = UTC+1) without timezone suffix
-        // Need to convert WAT to UTC by subtracting 1 hour
-        const WAT_OFFSET_MS = 60 * 60 * 1000; // WAT is UTC+1, so subtract 1 hour to get UTC
+        // Convert WAT to UTC (subtract 1 hour)
+        const WAT_OFFSET_MS = 60 * 60 * 1000;
         const endTimeAsIfUTC = new Date(fullDateTimeStr + 'Z').getTime();
         const eventEndMs = endTimeAsIfUTC - WAT_OFFSET_MS;
+        
+        const hasEnded = (Date.now() - eventEndMs) > (5 * 60 * 1000);
+        
+        console.log('[EXPIRE CHECK]', event.title, 'datePart:', datePart, 'timePart:', timePart, 'fullDateTime:', fullDateTimeStr, 'adjustedUTC:', new Date(eventEndMs).toISOString(), 'nowUTC:', new Date(Date.now()).toISOString(), 'diff minutes:', Math.floor((Date.now() - eventEndMs) / 60000), 'hasEnded:', hasEnded);
         
         if (isNaN(eventEndMs)) continue;
         
@@ -85,10 +88,6 @@ export const updateExpiredEvents = async () => {
           if (eventEndMs <= eventStartMs) continue; // skip invalid events
         }
         
-        const hasEnded = (Date.now() - eventEndMs) > (5 * 60 * 1000);
-        
-        console.log('[EXPIRE CHECK]', event.title, 'stored:', fullDateTimeStr, 'adjustedUTC:', new Date(eventEndMs).toISOString(), 'nowUTC:', new Date(Date.now()).toISOString(), 'diff minutes:', Math.floor((Date.now() - eventEndMs) / 60000), 'hasEnded:', hasEnded);
-        
         // If event has ended, update it directly
         if (hasEnded) {
           const newStatus = event.status === 'active' ? 'ended' : 'expired';
@@ -100,7 +99,7 @@ export const updateExpiredEvents = async () => {
           if (error) {
             console.log('[EXPIRE ERROR]', event.title, error.message);
           } else {
-            console.log('[EXPIRE SUCCESS]', event.title, 'updated to', newStatus);
+            console.log('[EXPIRE SUCCESS]', event.title, '→', newStatus);
             expiredCount++;
           }
         }
