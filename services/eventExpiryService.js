@@ -64,11 +64,11 @@ export const updateExpiredEvents = async () => {
         const timeStr = event.end_time || '23:59:59';
         const fullDateTimeStr = `${expiryDateStr.split('T')[0]}T${timeStr}`;
         
-        // end_time is stored in WAT (UTC+1), convert to UTC by treating as WAT
-        const eventEndWAT = new Date(fullDateTimeStr.includes('Z') || fullDateTimeStr.includes('+') 
+        // Parse as UTC (Supabase stores in UTC, Render runs in UTC)
+        const endTimeStr = fullDateTimeStr.includes('Z') || fullDateTimeStr.includes('+') 
           ? fullDateTimeStr 
-          : fullDateTimeStr + '+01:00'); // Treat as WAT (UTC+1)
-        const eventEndMs = eventEndWAT.getTime();
+          : fullDateTimeStr + 'Z'; // Force UTC parsing
+        const eventEndMs = new Date(endTimeStr).getTime();
         
         if (isNaN(eventEndMs)) continue;
         
@@ -76,10 +76,10 @@ export const updateExpiredEvents = async () => {
         if (event.start_time) {
           const startDateStr = event.date?.split('T')[0];
           const startFullStr = `${startDateStr}T${event.start_time}`;
-          const eventStartWAT = new Date(startFullStr.includes('Z') || startFullStr.includes('+')
+          const startTimeStr = startFullStr.includes('Z') || startFullStr.includes('+')
             ? startFullStr
-            : startFullStr + '+01:00'); // Treat as WAT (UTC+1)
-          const eventStartMs = eventStartWAT.getTime();
+            : startFullStr + 'Z'; // Force UTC parsing
+          const eventStartMs = new Date(startTimeStr).getTime();
           if (eventEndMs <= eventStartMs) continue; // skip invalid events
         }
         
@@ -126,17 +126,17 @@ export const updateExpiredEvents = async () => {
           }
         }
 
-        // Update pending events to 'cancelled'
+        // Update pending events to 'expired'
         if (pendingExpiredIds.length > 0) {
           const { error: pendingError } = await supabaseAdmin
             .from('events')
-            .update({ status: 'cancelled' })
+            .update({ status: 'expired' })
             .in('id', pendingExpiredIds);
 
           if (pendingError) {
-            console.error('❌ Error updating pending events to cancelled:', pendingError);
+            console.error('❌ Error updating pending events to expired:', pendingError);
           } else {
-            console.log(`✅ Updated ${pendingExpiredIds.length} pending events to 'cancelled' status`);
+            console.log(`✅ Updated ${pendingExpiredIds.length} pending events to 'expired' status`);
           }
         }
       }
