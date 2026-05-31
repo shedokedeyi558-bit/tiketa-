@@ -81,16 +81,6 @@ export const updateExpiredEvents = async () => {
         
         if (isNaN(eventEndMs)) continue;
         
-        // Safety check: skip if end time is before start time (invalid event data)
-        if (event.start_time) {
-          const startDateStr = event.date?.split('T')[0];
-          const startFullStr = `${startDateStr}T${event.start_time}`;
-          const isStartUTC = startFullStr.includes('Z') || startFullStr.includes('+') || startFullStr.includes('-05') || startFullStr.includes('-04');
-          const startParsedMs = new Date(isStartUTC ? startFullStr : startFullStr + 'Z').getTime();
-          const eventStartMs = isStartUTC ? startParsedMs : startParsedMs - WAT_OFFSET_MS;
-          if (eventEndMs <= eventStartMs) continue; // skip invalid events
-        }
-        
         // If event has ended, update it directly
         if (hasEnded) {
           const newStatus = event.status === 'active' ? 'ended' : 'expired';
