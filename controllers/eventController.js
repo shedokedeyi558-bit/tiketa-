@@ -776,7 +776,8 @@ export const getEventStats = async (req, res) => {
     const { data: allTransactions, error: txError } = await supabase
       .from('transactions')
       .select('*')
-      .eq('event_id', id);
+      .eq('event_id', id)
+      .eq('status', 'success');
 
     if (txError) {
       console.error('❌ Error fetching transactions:', txError);
@@ -795,8 +796,8 @@ export const getEventStats = async (req, res) => {
       });
     }
 
-    // Filter successful transactions
-    const successfulTransactions = allTransactions?.filter(t => t.status === 'success') ?? [];
+    // All transactions are already filtered by status='success' in the query above
+    const successfulTransactions = allTransactions ?? [];
     console.log('✅ Successful transactions:', successfulTransactions.length);
 
     // ✅ Calculate stats with correct business logic
