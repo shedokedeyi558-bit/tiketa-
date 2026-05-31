@@ -710,6 +710,7 @@ export const getDashboardStats = async (req, res) => {
       organizers: 0,
       pendingWithdrawals: 0,
       pendingEventApprovals: 0,
+      monthlyEarnings: 0,
       recentTransactions: [],
     };
 
@@ -944,6 +945,32 @@ export const getDashboardStats = async (req, res) => {
       });
     }
 
+    // Query 7: Monthly earnings - sum of platform_commission for current calendar month
+    try {
+      console.log('⏳ Querying monthly earnings...');
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
+
+      const { data: monthlyTx, error: monthlyErr } = await supabase
+        .from('transactions')
+        .select('platform_commission')
+        .eq('status', 'success')
+        .gte('created_at', monthStart)
+        .lt('created_at', monthEnd);
+
+      if (monthlyErr) {
+        console.error('❌ Monthly earnings query error:', monthlyErr.message);
+      } else {
+        stats.monthlyEarnings = Number(
+          (monthlyTx || []).reduce((sum, t) => sum + Number(t.platform_commission || 0), 0).toFixed(2)
+        );
+        console.log('✅ Monthly earnings:', stats.monthlyEarnings);
+      }
+    } catch (err) {
+      console.error('❌ Monthly earnings query exception:', err.message);
+    }
+
     // ✅ CRITICAL: Ensure all stats are numbers, never null/undefined (except arrays)
     Object.keys(stats).forEach(key => {
       // Skip array fields like recentTransactions
@@ -997,6 +1024,7 @@ export const getDashboardStats = async (req, res) => {
         organizers: 0,
         pendingWithdrawals: 0,
         pendingEventApprovals: 0,
+        monthlyEarnings: 0,
         recentTransactions: [],
       },
       error: error.message,
