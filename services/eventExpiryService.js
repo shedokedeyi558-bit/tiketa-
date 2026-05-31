@@ -67,14 +67,17 @@ export const updateExpiredEvents = async () => {
         // Combine into full datetime string
         const fullDateTimeStr = datePart + 'T' + timePart;
         
-        // Convert WAT to UTC (subtract 1 hour)
-        const WAT_OFFSET_MS = 60 * 60 * 1000;
+        // Times are stored in Nigerian local time (WAT = UTC+1)
+        // Parse as if it's UTC, then subtract 1 hour to get the actual UTC time
         const endTimeAsIfUTC = new Date(fullDateTimeStr + 'Z').getTime();
-        const eventEndMs = endTimeAsIfUTC - WAT_OFFSET_MS;
+        const WAT_OFFSET_MS = 60 * 60 * 1000; // 1 hour
+        const eventEndMs = endTimeAsIfUTC - WAT_OFFSET_MS; // Convert WAT to UTC
         
-        const hasEnded = (Date.now() - eventEndMs) > (5 * 60 * 1000);
+        const nowMs = Date.now(); // Current UTC time
+        const diffMs = nowMs - eventEndMs;
+        const hasEnded = diffMs > (5 * 60 * 1000); // More than 5 minutes past end time
         
-        console.log('[EXPIRE CHECK]', event.title, 'datePart:', datePart, 'timePart:', timePart, 'fullDateTime:', fullDateTimeStr, 'adjustedUTC:', new Date(eventEndMs).toISOString(), 'nowUTC:', new Date(Date.now()).toISOString(), 'diff minutes:', Math.floor((Date.now() - eventEndMs) / 60000), 'hasEnded:', hasEnded);
+        console.log('[EXPIRE CHECK]', event.title, 'datePart:', datePart, 'timePart:', timePart, 'fullDateTime:', fullDateTimeStr, 'eventEndUTC:', new Date(eventEndMs).toISOString(), 'nowUTC:', new Date(nowMs).toISOString(), 'diffMs:', diffMs, 'diffMinutes:', Math.floor(diffMs / 60000), 'hasEnded:', hasEnded);
         
         if (isNaN(eventEndMs)) continue;
         
