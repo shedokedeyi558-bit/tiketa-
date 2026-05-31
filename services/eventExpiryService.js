@@ -94,15 +94,18 @@ export const updateExpiredEvents = async () => {
         // If event has ended, update it directly
         if (hasEnded) {
           const newStatus = event.status === 'active' ? 'ended' : 'expired';
-          const { error } = await supabaseAdmin
+          console.log('[EXPIRE UPDATE] Attempting to update', event.title, 'from', event.status, 'to', newStatus);
+          
+          const { data, error } = await supabaseAdmin
             .from('events')
             .update({ status: newStatus })
-            .eq('id', event.id);
+            .eq('id', event.id)
+            .select();
           
           if (error) {
-            console.log('[EXPIRE ERROR]', event.title, error.message);
+            console.log('[EXPIRE ERROR]', event.title, 'Error:', error.message, 'Code:', error.code);
           } else {
-            console.log('[EXPIRE SUCCESS]', event.title, '→', newStatus);
+            console.log('[EXPIRE SUCCESS]', event.title, '→', newStatus, 'Updated rows:', data?.length);
             expiredCount++;
           }
         }
