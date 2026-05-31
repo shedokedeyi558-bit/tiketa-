@@ -206,7 +206,7 @@ router.get('/transactions', verifyToken, async (req, res) => {
     // Fetch transactions directly by organizer_id
     const { data: transactions, error: txError } = await supabase
       .from('transactions')
-      .select('id, buyer_name, buyer_email, ticket_price, processing_fee, total_amount, organizer_earnings, created_at, event_id, organizer_id')
+      .select('id, reference, buyer_name, buyer_email, ticket_price, processing_fee, total_amount, platform_commission, organizer_earnings, status, created_at, event_id, organizer_id, squadco_response')
       .eq('organizer_id', organizerId)
       .eq('status', 'success')
       .order('created_at', { ascending: false });
@@ -234,17 +234,33 @@ router.get('/transactions', verifyToken, async (req, res) => {
     }
 
     // Enrich transactions with event titles
-    const enrichedTransactions = (transactions || []).map(t => ({
-      id: t.id,
-      buyer_name: t.buyer_name,
-      buyer_email: t.buyer_email,
-      ticket_price: Number(t.ticket_price || 0),
-      processing_fee: Number(t.processing_fee || 0),
-      total_amount: Number(t.total_amount || 0),
-      organizer_earnings: Number(t.organizer_earnings || 0),
-      event_title: eventMap[t.event_id] || 'Unknown Event',
-      created_at: t.created_at
-    }));
+    const enrichedTransactions = (transactions || []).map(t => {
+      const cartItems = t.squadco_response?.cartItems || [];
+      const attendees = t.squadco_response?.attendees || [];
+      const quantity = cartItems.length > 0
+        ? cartItems.reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0)
+        : 1;
+      const ticketTypeId = cartItems.length > 0 ? (cartItems[0]?.id || null) : null;
+      const buyerPhone = attendees.length > 0 ? (attendees[0]?.phone || attendees[0]?.phoneNumber || null) : null;
+
+      return {
+        id: t.id,
+        event_id: t.event_id,
+        event_title: eventMap[t.event_id] || 'Unknown Event',
+        buyer_name: t.buyer_name,
+        buyer_email: t.buyer_email,
+        buyer_phone: buyerPhone,
+        ticket_price: Number(t.ticket_price || 0),
+        total_amount: Number(t.total_amount || 0),
+        platform_commission: Number(t.platform_commission || 0),
+        organizer_earnings: Number(t.organizer_earnings || 0),
+        quantity,
+        ticket_type_id: ticketTypeId,
+        reference: t.reference,
+        status: t.status,
+        created_at: t.created_at
+      };
+    });
 
     return res.status(200).json({
       success: true,
@@ -309,7 +325,7 @@ router.get('/events/:eventId/transactions', verifyToken, async (req, res) => {
     // Fetch all successful transactions for this event
     const { data: transactions, error: txError } = await supabase
       .from('transactions')
-      .select('id, buyer_name, buyer_email, ticket_price, total_amount, platform_commission, organizer_earnings, status, created_at, squadco_response')
+      .select('id, reference, buyer_name, buyer_email, ticket_price, total_amount, platform_commission, organizer_earnings, status, created_at, squadco_response')
       .eq('event_id', eventId)
       .eq('status', 'success')
       .order('created_at', { ascending: false });
@@ -326,21 +342,26 @@ router.get('/events/:eventId/transactions', verifyToken, async (req, res) => {
     // Shape the response - extract quantity from squadco_response.cartItems
     const shaped = (transactions || []).map(t => {
       const cartItems = t.squadco_response?.cartItems || [];
+      const attendees = t.squadco_response?.attendees || [];
       const quantity = cartItems.length > 0
         ? cartItems.reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0)
         : 1;
       const ticketTypeId = cartItems.length > 0 ? (cartItems[0]?.id || null) : null;
+      const buyerPhone = attendees.length > 0 ? (attendees[0]?.phone || attendees[0]?.phoneNumber || null) : null;
 
       return {
         id: t.id,
+        event_id: eventId,
         buyer_name: t.buyer_name,
         buyer_email: t.buyer_email,
+        buyer_phone: buyerPhone,
         ticket_price: Number(t.ticket_price || 0),
         total_amount: Number(t.total_amount || 0),
         platform_commission: Number(t.platform_commission || 0),
         organizer_earnings: Number(t.organizer_earnings || 0),
         quantity,
         ticket_type_id: ticketTypeId,
+        reference: t.reference,
         status: t.status,
         created_at: t.created_at
       };
