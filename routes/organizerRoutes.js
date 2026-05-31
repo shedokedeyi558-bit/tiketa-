@@ -261,6 +261,106 @@ router.get('/transactions', verifyToken, async (req, res) => {
 });
 
 /**
+ * GET /api/v1/organizer/events/:eventId/transactions
+ * Returns all successful transactions for a specific event owned by the organizer
+ */
+router.get('/events/:eventId/transactions', verifyToken, async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const organizerId = req.user.id;
+
+    if (!organizerId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+        message: 'You must be logged in'
+      });
+    }
+
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+
+    // Verify the event exists and belongs to this organizer
+    const { data: event, error: eventError } = await supabase
+      .from('events')
+      .select('id, organizer_id')
+      .eq('id', eventId)
+      .single();
+
+    if (eventError || !event) {
+      return res.status(404).json({
+        success: false,
+        error: 'Event not found',
+        message: 'Event not found'
+      });
+    }
+
+    if (event.organizer_id !== organizerId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: 'This event does not belong to you'
+      });
+    }
+
+    // Fetch all successful transactions for this event
+    const { data: transactions, error: txError } = await supabase
+      .from('transactions')
+      .select('id, buyer_name, buyer_email, ticket_price, total_amount, platform_commission, organizer_earnings, status, created_at, squadco_response')
+      .eq('event_id', eventId)
+      .eq('status', 'success')
+      .order('created_at', { ascending: false });
+
+    if (txError) {
+      console.error('❌ Error fetching event transactions:', txError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch transactions',
+        message: txError.message
+      });
+    }
+
+    // Shape the response - extract quantity from squadco_response.cartItems
+    const shaped = (transactions || []).map(t => {
+      const cartItems = t.squadco_response?.cartItems || [];
+      const quantity = cartItems.length > 0
+        ? cartItems.reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0)
+        : 1;
+      const ticketTypeId = cartItems.length > 0 ? (cartItems[0]?.id || null) : null;
+
+      return {
+        id: t.id,
+        buyer_name: t.buyer_name,
+        buyer_email: t.buyer_email,
+        ticket_price: Number(t.ticket_price || 0),
+        total_amount: Number(t.total_amount || 0),
+        platform_commission: Number(t.platform_commission || 0),
+        organizer_earnings: Number(t.organizer_earnings || 0),
+        quantity,
+        ticket_type_id: ticketTypeId,
+        status: t.status,
+        created_at: t.created_at
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: shaped
+    });
+  } catch (err) {
+    console.error('❌ Event transactions error:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Server error',
+      message: 'Internal server error'
+    });
+  }
+});
+
+/**
  * GET /api/v1/organizer/past-events
  * Returns all ended or cancelled events for the logged-in organizer
  */
