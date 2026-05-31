@@ -496,7 +496,10 @@ export const verifyPaymentController = async (req, res) => {
           .from('transactions')
           .update({
             status: 'success',
-            squadco_response: result.rawData,
+            squadco_response: { 
+              ...transaction.squadco_response, // Preserve original cartItems and attendees
+              ...result.rawData // Add Squad verification data
+            },
             verified_at: new Date().toISOString(),
           })
           .eq('id', transaction.id),
