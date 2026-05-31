@@ -66,10 +66,13 @@ export const updateExpiredEvents = async () => {
         
         // Parse end time: stored as Nigerian local time (WAT = UTC+1) without timezone suffix
         // Need to convert WAT to UTC by subtracting 1 hour
-        const isUTC = fullDateTimeStr.includes('Z') || fullDateTimeStr.includes('+') || fullDateTimeStr.includes('-05') || fullDateTimeStr.includes('-04');
-        const parsedMs = new Date(isUTC ? fullDateTimeStr : fullDateTimeStr + 'Z').getTime();
-        const WAT_OFFSET = 60 * 60 * 1000; // 1 hour in ms
-        const eventEndMs = isUTC ? parsedMs : parsedMs - WAT_OFFSET;
+        const WAT_OFFSET_MS = 60 * 60 * 1000; // WAT is UTC+1, so subtract 1 hour to get UTC
+        const endTimeAsIfUTC = new Date(fullDateTimeStr + 'Z').getTime();
+        const eventEndMs = endTimeAsIfUTC - WAT_OFFSET_MS;
+        
+        console.log('[EXPIRE CHECK]', event.title, 'stored:', fullDateTimeStr, 'adjustedUTC:', new Date(eventEndMs).toISOString(), 'nowUTC:', new Date(Date.now()).toISOString(), 'diff minutes:', Math.floor((Date.now() - eventEndMs) / 60000), 'hasEnded:', (Date.now() - eventEndMs) > (5 * 60 * 1000));
+        
+        const hasEnded = (Date.now() - eventEndMs) > (5 * 60 * 1000);
         
         if (isNaN(eventEndMs)) continue;
         
@@ -79,14 +82,9 @@ export const updateExpiredEvents = async () => {
           const startFullStr = `${startDateStr}T${event.start_time}`;
           const isStartUTC = startFullStr.includes('Z') || startFullStr.includes('+') || startFullStr.includes('-05') || startFullStr.includes('-04');
           const startParsedMs = new Date(isStartUTC ? startFullStr : startFullStr + 'Z').getTime();
-          const eventStartMs = isStartUTC ? startParsedMs : startParsedMs - WAT_OFFSET;
+          const eventStartMs = isStartUTC ? startParsedMs : startParsedMs - WAT_OFFSET_MS;
           if (eventEndMs <= eventStartMs) continue; // skip invalid events
         }
-        
-        // Only expire if event ended more than 5 minutes ago
-        const hasEnded = (nowMs - eventEndMs) > BUFFER_MS;
-        
-        console.log('[EXPIRE CHECK]', event.title, 'storedEndTime:', fullDateTimeStr, 'adjustedUTC:', new Date(eventEndMs).toISOString(), 'nowUTC:', new Date(nowMs).toISOString(), 'diff minutes:', Math.floor((nowMs - eventEndMs) / 60000), 'hasEnded:', hasEnded);
         
         if (hasEnded) {
           expiredEventIds.push(event.id);
