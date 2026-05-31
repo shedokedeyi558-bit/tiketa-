@@ -315,3 +315,124 @@ export const sendEventRejectedEmail = async (organizerEmail, organizerName, even
     return { success: false, error: error.message };
   }
 };
+
+/**
+ * Send Ticketa custom ticket purchase confirmation email
+ * Replaces Squad's generic receipt with a branded Ticketa email
+ */
+export const sendTicketPurchaseConfirmation = async ({ buyerName, buyerEmail, reference, event, cartItems, attendees, totalAmount }) => {
+  try {
+    console.log('📧 Sending Ticketa purchase confirmation to:', buyerEmail);
+
+    const eventTitle = event?.title || 'Your Event';
+    const eventDate = event?.date ? new Date(event.date).toLocaleDateString('en-NG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '';
+    const eventTime = event?.start_time ? ` at ${event.start_time}` : '';
+    const eventLocation = event?.location || '';
+
+    // Build ticket types rows
+    const ticketRows = (cartItems || []).map(item => `
+      <tr>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;">${item.name || 'Ticket'}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:center;">${item.quantity || 1}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;">₦${Number(item.price || 0).toLocaleString()}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;">₦${(Number(item.price || 0) * (parseInt(item.quantity) || 1)).toLocaleString()}</td>
+      </tr>
+    `).join('');
+
+    // Build attendees list
+    const attendeeList = (attendees || []).length > 0
+      ? `<h3 style="color:#333;margin-top:24px;">Attendees</h3>
+         <ul style="padding-left:20px;">
+           ${attendees.map((a, i) => `<li style="margin-bottom:4px;">${a.name || a.fullName || `Attendee ${i + 1}`}</li>`).join('')}
+         </ul>`
+      : '';
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head><meta charset="utf-8"/></head>
+      <body style="font-family:Arial,sans-serif;background:#f9f9f9;margin:0;padding:0;">
+        <div style="max-width:600px;margin:32px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+          
+          <!-- Header -->
+          <div style="background:#6c3fc5;padding:28px 32px;">
+            <h1 style="color:#fff;margin:0;font-size:24px;">🎟 Ticketa</h1>
+            <p style="color:#e0d0ff;margin:6px 0 0;">Your tickets are confirmed!</p>
+          </div>
+
+          <!-- Body -->
+          <div style="padding:32px;">
+            <p style="font-size:16px;color:#333;">Hi <strong>${buyerName}</strong>,</p>
+            <p style="color:#555;">Thank you for your purchase. Your tickets for <strong>${eventTitle}</strong> are confirmed.</p>
+
+            <!-- Event Details -->
+            <div style="background:#f4f0ff;border-radius:6px;padding:16px 20px;margin:20px 0;">
+              <h3 style="margin:0 0 10px;color:#6c3fc5;">📅 Event Details</h3>
+              <p style="margin:4px 0;color:#333;"><strong>Event:</strong> ${eventTitle}</p>
+              ${eventDate ? `<p style="margin:4px 0;color:#333;"><strong>Date:</strong> ${eventDate}${eventTime}</p>` : ''}
+              ${eventLocation ? `<p style="margin:4px 0;color:#333;"><strong>Location:</strong> ${eventLocation}</p>` : ''}
+            </div>
+
+            <!-- Ticket Breakdown -->
+            <h3 style="color:#333;">🎫 Tickets Purchased</h3>
+            <table style="width:100%;border-collapse:collapse;font-size:14px;">
+              <thead>
+                <tr style="background:#f4f0ff;">
+                  <th style="padding:8px 12px;text-align:left;color:#6c3fc5;">Ticket Type</th>
+                  <th style="padding:8px 12px;text-align:center;color:#6c3fc5;">Qty</th>
+                  <th style="padding:8px 12px;text-align:right;color:#6c3fc5;">Unit Price</th>
+                  <th style="padding:8px 12px;text-align:right;color:#6c3fc5;">Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${ticketRows}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="3" style="padding:10px 12px;text-align:right;font-weight:bold;color:#333;">Total Paid:</td>
+                  <td style="padding:10px 12px;text-align:right;font-weight:bold;color:#6c3fc5;">₦${Number(totalAmount).toLocaleString()}</td>
+                </tr>
+              </tfoot>
+            </table>
+
+            ${attendeeList}
+
+            <!-- Reference -->
+            <div style="background:#f9f9f9;border:1px solid #eee;border-radius:6px;padding:14px 18px;margin:24px 0;">
+              <p style="margin:0;font-size:13px;color:#888;">Transaction Reference</p>
+              <p style="margin:4px 0 0;font-size:15px;font-weight:bold;color:#333;letter-spacing:0.5px;">${reference}</p>
+            </div>
+
+            <!-- Entry Notice -->
+            <div style="background:#fff8e1;border-left:4px solid #f59e0b;padding:14px 18px;border-radius:0 6px 6px 0;margin:20px 0;">
+              <p style="margin:0;color:#92400e;font-weight:bold;">📌 Present this email at the entrance</p>
+              <p style="margin:6px 0 0;color:#92400e;font-size:14px;">Show this confirmation or quote your transaction reference to gain entry.</p>
+            </div>
+
+            <p style="color:#888;font-size:13px;margin-top:28px;">Questions? Contact us at <a href="mailto:support@ticketa.com" style="color:#6c3fc5;">support@ticketa.com</a></p>
+          </div>
+
+          <!-- Footer -->
+          <div style="background:#f4f0ff;padding:16px 32px;text-align:center;">
+            <p style="margin:0;font-size:12px;color:#999;">© ${new Date().getFullYear()} Ticketa. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const mailOptions = {
+      from: `"Ticketa" <${process.env.EMAIL_USER}>`,
+      to: buyerEmail,
+      subject: `Your tickets for ${eventTitle} are confirmed 🎟`,
+      html,
+    };
+
+    const result = await transporter.sendMail(mailOptions);
+    console.log('✅ Ticketa confirmation email sent:', result.messageId);
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error('❌ Error sending Ticketa confirmation email:', error);
+    return { success: false, error: error.message };
+  }
+};

@@ -533,73 +533,170 @@ export const verifyPaymentController = async (req, res) => {
 
     console.log('✅ Transaction updated to success');
 
-    // 🔑 CRITICAL: Update event tickets_sold count
-    console.log('🎫 Updating event tickets_sold count...');
+    // ✅ Extract cartItems and attendees from the preserved squadco_response
+    const rawResponse = transaction.squadco_response || {};
+    const cartItems = rawResponse.cartItems || [];
+    const attendees = rawResponse.attendees || [];
+    const buyerPhone = attendees.length > 0
+      ? (attendees[0]?.phone || attendees[0]?.phoneNumber || null)
+      : null;
+
+    console.log('🛒 Cart items for per-type transactions:', JSON.stringify(cartItems));
+    console.log('👥 Attendees:', JSON.stringify(attendees));
+
+    // ✅ Fetch event details for email and ticket_type names
+    let eventData = null;
     try {
-      const { data: event, error: eventFetchError } = await supabase
+      const { data: ev } = await supabase
         .from('events')
-        .select('tickets_sold, total_tickets')
+        .select('id, title, date, end_date, start_time, end_time, location, organizer_id, tickets_sold, total_tickets, ticket_types')
         .eq('id', transaction.event_id)
         .single();
+      eventData = ev;
+    } catch (e) {
+      console.error('⚠️ Failed to fetch event for post-payment processing:', e.message);
+    }
 
-      if (eventFetchError) {
-        console.error('⚠️ Failed to fetch event:', eventFetchError);
-      } else {
-        // Extract quantity from squadco_response.cartItems
-        const rawResponse = transaction.squadco_response || {};
-        const cartItems = rawResponse.cartItems || rawResponse.orig_cart || rawResponse.cart || [];
-        const ticketQuantity = cartItems.length > 0 
-          ? cartItems.reduce((acc, item) => acc + (parseInt(item.quantity) || 1), 0)
-          : 1;
-        
-        const currentTicketsSold = event?.tickets_sold || 0;
-        const newTicketsSold = currentTicketsSold + ticketQuantity;
+    // ✅ BUG 4 FIX: Create one transaction row per ticket type in cartItems
+    // The original pending transaction becomes the first cart item row;
+    // additional rows are inserted for remaining cart items.
+    const perTypeTxIds = [transaction.id]; // track all tx IDs for wallet credit
 
-        console.log('📊 Ticket count update:', {
-          event_id: transaction.event_id,
-          current_tickets_sold: currentTicketsSold,
-          cartItems_length: cartItems.length,
-          quantity_purchased: ticketQuantity,
-          new_tickets_sold: newTicketsSold,
-          total_tickets: event?.total_tickets,
-        });
+    if (cartItems.length > 0) {
+      // Update the original pending transaction to reflect the FIRST cart item
+      const firstItem = cartItems[0];
+      const firstItemPrice = parseFloat(firstItem.price || firstItem.ticket_price || 0) * (parseInt(firstItem.quantity) || 1);
+      const firstProcessingFee = cartItems.length === 1
+        ? (firstItemPrice <= 5000 ? 100 : Math.round((firstItemPrice * 1.5) / 100))
+        : 0; // processing fee only on first row; total already charged
+      const firstPlatformCommission = firstItemPrice * 0.03;
+      const firstOrganizerEarnings = firstItemPrice * 0.97;
 
-        const { error: updateEventError } = await supabase
-          .from('events')
-          .update({ tickets_sold: newTicketsSold })
-          .eq('id', transaction.event_id);
+      await supabase
+        .from('transactions')
+        .update({
+          ticket_type_id: firstItem.id || null,
+          ticket_price: firstItemPrice,
+          processing_fee: firstProcessingFee,
+          total_amount: firstItemPrice + firstProcessingFee,
+          platform_commission: firstPlatformCommission,
+          organizer_earnings: firstOrganizerEarnings,
+          quantity: parseInt(firstItem.quantity) || 1,
+          attendees: attendees,
+          buyer_phone: buyerPhone,
+        })
+        .eq('id', transaction.id);
 
-        if (updateEventError) {
-          console.error('⚠️ Failed to update event tickets_sold:', updateEventError);
+      // Insert additional rows for remaining cart items (index 1+)
+      for (let i = 1; i < cartItems.length; i++) {
+        const item = cartItems[i];
+        const itemPrice = parseFloat(item.price || item.ticket_price || 0) * (parseInt(item.quantity) || 1);
+        const itemPlatformCommission = itemPrice * 0.03;
+        const itemOrganizerEarnings = itemPrice * 0.97;
+
+        const { data: newTx, error: newTxErr } = await supabase
+          .from('transactions')
+          .insert([{
+            reference: transaction.reference, // same reference
+            event_id: transaction.event_id,
+            organizer_id: transaction.organizer_id,
+            buyer_email: transaction.buyer_email,
+            buyer_name: transaction.buyer_name,
+            buyer_phone: buyerPhone,
+            ticket_type_id: item.id || null,
+            ticket_price: itemPrice,
+            processing_fee: 0,
+            total_amount: itemPrice,
+            platform_commission: itemPlatformCommission,
+            squadco_fee: 0,
+            organizer_earnings: itemOrganizerEarnings,
+            quantity: parseInt(item.quantity) || 1,
+            attendees: attendees,
+            status: 'success',
+            verified_at: new Date().toISOString(),
+            squadco_response: transaction.squadco_response,
+            ip_address: transaction.ip_address,
+            user_agent: transaction.user_agent,
+          }])
+          .select()
+          .single();
+
+        if (newTxErr) {
+          console.error(`⚠️ Failed to insert per-type transaction for item ${i}:`, newTxErr.message);
         } else {
-          console.log('✅ Event tickets_sold updated successfully');
+          console.log(`✅ Per-type transaction created for ${item.name || item.id}:`, newTx.id);
+          perTypeTxIds.push(newTx.id);
         }
+      }
+    } else {
+      // No cartItems — just store attendees on the original transaction
+      await supabase
+        .from('transactions')
+        .update({ attendees: attendees, buyer_phone: buyerPhone })
+        .eq('id', transaction.id);
+    }
+
+    // ✅ Update event tickets_sold count
+    console.log('🎫 Updating event tickets_sold count...');
+    try {
+      const totalQuantity = cartItems.length > 0
+        ? cartItems.reduce((acc, item) => acc + (parseInt(item.quantity) || 1), 0)
+        : 1;
+
+      const currentTicketsSold = eventData?.tickets_sold || 0;
+      const newTicketsSold = currentTicketsSold + totalQuantity;
+
+      const { error: updateEventError } = await supabase
+        .from('events')
+        .update({ tickets_sold: newTicketsSold })
+        .eq('id', transaction.event_id);
+
+      if (updateEventError) {
+        console.error('⚠️ Failed to update event tickets_sold:', updateEventError);
+      } else {
+        console.log('✅ Event tickets_sold updated to', newTicketsSold);
       }
     } catch (eventError) {
       console.error('⚠️ Error updating event tickets_sold (non-blocking):', eventError);
-      // Don't fail the payment verification if event update fails
     }
 
-    // 🔑 CRITICAL: Credit organizer wallet after successful payment
-    if (transaction.organizer_earnings && transaction.organizer_earnings > 0) {
-      console.log('💰 Crediting organizer wallet...');
+    // ✅ Credit organizer wallet (total organizer earnings across all cart items)
+    const totalOrganizerEarnings = cartItems.length > 0
+      ? cartItems.reduce((sum, item) => {
+          const itemPrice = parseFloat(item.price || item.ticket_price || 0) * (parseInt(item.quantity) || 1);
+          return sum + (itemPrice * 0.97);
+        }, 0)
+      : transaction.organizer_earnings;
+
+    if (totalOrganizerEarnings > 0) {
+      console.log('💰 Crediting organizer wallet:', totalOrganizerEarnings);
       const walletResult = await creditOrganizerWallet(
         transaction.organizer_id,
-        transaction.organizer_earnings
+        totalOrganizerEarnings,
+        transaction.reference
       );
-      
       if (walletResult.success) {
-        console.log(`✅ Wallet credited: ₦${transaction.organizer_earnings} to organizer ${transaction.organizer_id}`);
+        console.log(`✅ Wallet credited: ₦${totalOrganizerEarnings} to organizer ${transaction.organizer_id}`);
       } else {
         console.error('⚠️ Wallet credit failed (non-blocking):', walletResult.error);
-        // Don't fail the payment verification if wallet credit fails
-        // The transaction is already marked as success
       }
-    } else {
-      console.warn('⚠️ No organizer earnings to credit:', {
-        organizer_id: transaction.organizer_id,
-        organizer_earnings: transaction.organizer_earnings,
+    }
+
+    // ✅ BUG 2 FIX: Send Ticketa custom confirmation email
+    try {
+      const { sendTicketPurchaseConfirmation } = await import('../services/emailService.js');
+      await sendTicketPurchaseConfirmation({
+        buyerName: transaction.buyer_name,
+        buyerEmail: transaction.buyer_email,
+        reference: transaction.reference,
+        event: eventData,
+        cartItems,
+        attendees,
+        totalAmount: transaction.total_amount,
       });
+      console.log('✅ Ticketa confirmation email sent to', transaction.buyer_email);
+    } catch (emailErr) {
+      console.error('⚠️ Failed to send confirmation email (non-blocking):', emailErr.message);
     }
 
     // 🔑 CRITICAL: Return full transaction data in response
