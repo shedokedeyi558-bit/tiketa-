@@ -533,16 +533,22 @@ export const verifyPaymentController = async (req, res) => {
 
     console.log('✅ Transaction updated to success');
 
-    // ✅ Extract cartItems and attendees from the preserved squadco_response
-    const rawResponse = transaction.squadco_response || {};
-    const cartItems = rawResponse.cartItems || [];
-    const attendees = rawResponse.attendees || [];
+    // ✅ Extract cartItems and attendees from the ORIGINAL in-memory transaction
+    // CRITICAL: Do this BEFORE any further DB operations that might overwrite squadco_response
+    // Also handle case where squadco_response is stored as a JSON string
+    let rawResponse = transaction.squadco_response || {};
+    if (typeof rawResponse === 'string') {
+      try { rawResponse = JSON.parse(rawResponse); } catch (_) { rawResponse = {}; }
+    }
+    const cartItems = Array.isArray(rawResponse.cartItems) ? rawResponse.cartItems : [];
+    const attendees = Array.isArray(rawResponse.attendees) ? rawResponse.attendees : [];
     const buyerPhone = attendees.length > 0
       ? (attendees[0]?.phone || attendees[0]?.phoneNumber || null)
       : null;
 
     console.log('🛒 Cart items for per-type transactions:', JSON.stringify(cartItems));
     console.log('👥 Attendees:', JSON.stringify(attendees));
+    console.log('🛒 Cart items count:', cartItems.length);
 
     // ✅ Fetch event details for email and ticket_type names
     let eventData = null;
@@ -557,22 +563,25 @@ export const verifyPaymentController = async (req, res) => {
       console.error('⚠️ Failed to fetch event for post-payment processing:', e.message);
     }
 
-    // ✅ BUG 4 FIX: Create one transaction row per ticket type in cartItems
-    // The original pending transaction becomes the first cart item row;
-    // additional rows are inserted for remaining cart items.
-    const perTypeTxIds = [transaction.id]; // track all tx IDs for wallet credit
+    // ✅ Create one transaction row per ticket type in cartItems
+    const perTypeTxIds = [transaction.id];
 
     if (cartItems.length > 0) {
       // Update the original pending transaction to reflect the FIRST cart item
       const firstItem = cartItems[0];
-      const firstItemPrice = parseFloat(firstItem.price || firstItem.ticket_price || 0) * (parseInt(firstItem.quantity) || 1);
+      const firstItemQty = parseInt(firstItem.quantity) || 1;
+      const firstItemUnitPrice = parseFloat(firstItem.price || firstItem.ticket_price || 0);
+      const firstItemPrice = firstItemUnitPrice * firstItemQty;
+      // Processing fee only on first row (charged once for the whole order)
       const firstProcessingFee = cartItems.length === 1
         ? (firstItemPrice <= 5000 ? 100 : Math.round((firstItemPrice * 1.5) / 100))
-        : 0; // processing fee only on first row; total already charged
+        : 0;
       const firstPlatformCommission = firstItemPrice * 0.03;
       const firstOrganizerEarnings = firstItemPrice * 0.97;
 
-      await supabase
+      console.log(`[PER-TYPE] Updating row 0 (original): ticket_type_id=${firstItem.id}, qty=${firstItemQty}, price=${firstItemPrice}`);
+
+      const { error: updateFirstErr } = await supabase
         .from('transactions')
         .update({
           ticket_type_id: firstItem.id || null,
@@ -581,23 +590,33 @@ export const verifyPaymentController = async (req, res) => {
           total_amount: firstItemPrice + firstProcessingFee,
           platform_commission: firstPlatformCommission,
           organizer_earnings: firstOrganizerEarnings,
-          quantity: parseInt(firstItem.quantity) || 1,
+          quantity: firstItemQty,
           attendees: attendees,
           buyer_phone: buyerPhone,
         })
         .eq('id', transaction.id);
 
-      // Insert additional rows for remaining cart items (index 1+)
+      if (updateFirstErr) {
+        console.error('[PER-TYPE] Failed to update first row:', updateFirstErr.message);
+      } else {
+        console.log('[PER-TYPE] First row updated successfully');
+      }
+
+      // Insert one row for each remaining cart item (index 1+)
       for (let i = 1; i < cartItems.length; i++) {
         const item = cartItems[i];
-        const itemPrice = parseFloat(item.price || item.ticket_price || 0) * (parseInt(item.quantity) || 1);
+        const itemQty = parseInt(item.quantity) || 1;
+        const itemUnitPrice = parseFloat(item.price || item.ticket_price || 0);
+        const itemPrice = itemUnitPrice * itemQty;
         const itemPlatformCommission = itemPrice * 0.03;
         const itemOrganizerEarnings = itemPrice * 0.97;
+
+        console.log(`[PER-TYPE] Inserting row ${i}: ticket_type_id=${item.id}, qty=${itemQty}, price=${itemPrice}`);
 
         const { data: newTx, error: newTxErr } = await supabase
           .from('transactions')
           .insert([{
-            reference: transaction.reference, // same reference
+            reference: transaction.reference,
             event_id: transaction.event_id,
             organizer_id: transaction.organizer_id,
             buyer_email: transaction.buyer_email,
@@ -610,7 +629,7 @@ export const verifyPaymentController = async (req, res) => {
             platform_commission: itemPlatformCommission,
             squadco_fee: 0,
             organizer_earnings: itemOrganizerEarnings,
-            quantity: parseInt(item.quantity) || 1,
+            quantity: itemQty,
             attendees: attendees,
             status: 'success',
             verified_at: new Date().toISOString(),
@@ -618,18 +637,21 @@ export const verifyPaymentController = async (req, res) => {
             ip_address: transaction.ip_address,
             user_agent: transaction.user_agent,
           }])
-          .select()
+          .select('id')
           .single();
 
         if (newTxErr) {
-          console.error(`⚠️ Failed to insert per-type transaction for item ${i}:`, newTxErr.message);
+          console.error(`[PER-TYPE] Failed to insert row ${i} for item ${item.id}:`, newTxErr.message);
         } else {
-          console.log(`✅ Per-type transaction created for ${item.name || item.id}:`, newTx.id);
+          console.log(`[PER-TYPE] Row ${i} inserted: ${newTx.id} for ticket_type_id=${item.id}`);
           perTypeTxIds.push(newTx.id);
         }
       }
+
+      console.log(`[PER-TYPE] Done. Created ${perTypeTxIds.length} rows for ${cartItems.length} cart items`);
     } else {
       // No cartItems — just store attendees on the original transaction
+      console.warn('[PER-TYPE] No cartItems found — storing attendees only on original row');
       await supabase
         .from('transactions')
         .update({ attendees: attendees, buyer_phone: buyerPhone })
