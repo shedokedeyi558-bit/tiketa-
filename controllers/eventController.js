@@ -21,6 +21,10 @@ export const getOrganizerEvents = async (req, res) => {
   try {
     const userId = req.user.id;
     
+    // ✅ Check for expired events and update them to 'ended' status
+    const expiryResult = await updateExpiredEvents();
+    console.log('⏰ Expiry check result:', expiryResult);
+    
     // ✅ Parse query parameters with defaults
     const status = req.query.status || 'all'; // 'all', 'active', 'cancelled', 'completed' - default to 'all' to show pending events
     const dateFilter = req.query.dateFilter || 'upcoming'; // 'all', 'upcoming', 'past'

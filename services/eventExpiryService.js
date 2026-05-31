@@ -86,6 +86,8 @@ export const updateExpiredEvents = async () => {
         // Only expire if event ended more than 5 minutes ago
         const hasEnded = (nowMs - eventEndMs) > BUFFER_MS;
         
+        console.log('[EXPIRE CHECK]', event.title, 'endTime:', fullDateTimeStr, 'nowMs:', nowMs, 'diff minutes:', Math.floor((nowMs - eventEndMs)/60000), 'hasEnded:', hasEnded);
+        
         if (hasEnded) {
           expiredEventIds.push(event.id);
           console.log(`⏰ Event expired: ${event.title} (${event.status})`);
