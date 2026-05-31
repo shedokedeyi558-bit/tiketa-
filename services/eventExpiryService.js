@@ -64,11 +64,12 @@ export const updateExpiredEvents = async () => {
         const timeStr = event.end_time || '23:59:59';
         const fullDateTimeStr = `${expiryDateStr.split('T')[0]}T${timeStr}`;
         
-        // Parse as UTC (Supabase stores in UTC, Render runs in UTC)
-        const endTimeStr = fullDateTimeStr.includes('Z') || fullDateTimeStr.includes('+') 
-          ? fullDateTimeStr 
-          : fullDateTimeStr + 'Z'; // Force UTC parsing
-        const eventEndMs = new Date(endTimeStr).getTime();
+        // Parse end time: stored as Nigerian local time (WAT = UTC+1) without timezone suffix
+        // Need to convert WAT to UTC by subtracting 1 hour
+        const isUTC = fullDateTimeStr.includes('Z') || fullDateTimeStr.includes('+') || fullDateTimeStr.includes('-05') || fullDateTimeStr.includes('-04');
+        const parsedMs = new Date(isUTC ? fullDateTimeStr : fullDateTimeStr + 'Z').getTime();
+        const WAT_OFFSET = 60 * 60 * 1000; // 1 hour in ms
+        const eventEndMs = isUTC ? parsedMs : parsedMs - WAT_OFFSET;
         
         if (isNaN(eventEndMs)) continue;
         
@@ -76,17 +77,16 @@ export const updateExpiredEvents = async () => {
         if (event.start_time) {
           const startDateStr = event.date?.split('T')[0];
           const startFullStr = `${startDateStr}T${event.start_time}`;
-          const startTimeStr = startFullStr.includes('Z') || startFullStr.includes('+')
-            ? startFullStr
-            : startFullStr + 'Z'; // Force UTC parsing
-          const eventStartMs = new Date(startTimeStr).getTime();
+          const isStartUTC = startFullStr.includes('Z') || startFullStr.includes('+') || startFullStr.includes('-05') || startFullStr.includes('-04');
+          const startParsedMs = new Date(isStartUTC ? startFullStr : startFullStr + 'Z').getTime();
+          const eventStartMs = isStartUTC ? startParsedMs : startParsedMs - WAT_OFFSET;
           if (eventEndMs <= eventStartMs) continue; // skip invalid events
         }
         
         // Only expire if event ended more than 5 minutes ago
         const hasEnded = (nowMs - eventEndMs) > BUFFER_MS;
         
-        console.log('[EXPIRE CHECK]', event.title, 'endTime:', fullDateTimeStr, 'nowMs:', nowMs, 'diff minutes:', Math.floor((nowMs - eventEndMs)/60000), 'hasEnded:', hasEnded);
+        console.log('[EXPIRE CHECK]', event.title, 'storedEndTime:', fullDateTimeStr, 'adjustedUTC:', new Date(eventEndMs).toISOString(), 'nowUTC:', new Date(nowMs).toISOString(), 'diff minutes:', Math.floor((nowMs - eventEndMs) / 60000), 'hasEnded:', hasEnded);
         
         if (hasEnded) {
           expiredEventIds.push(event.id);
