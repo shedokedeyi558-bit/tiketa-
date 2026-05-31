@@ -1470,17 +1470,21 @@ export const getAdminEventById = async (req, res) => {
     console.log('✅ Organizer found:', organizer_name);
 
     // ✅ Fetch transaction data for revenue and tickets sold using service role
+    console.log('🔍 DEBUG - Querying transactions for event_id:', id);
     const { data: txData } = await supabaseAdmin
       .from('transactions')
       .select('total_amount, organizer_earnings, status')
       .eq('event_id', id)
       .eq('status', 'success');
 
+    console.log('🔍 DEBUG - Transactions found:', txData?.length || 0);
+
     const tickets_sold = (txData || []).length;
     const total_revenue = (txData || []).reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
     const organizer_earnings = (txData || []).reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0);
 
     console.log('✅ Transaction data fetched:', { tickets_sold, total_revenue });
+    console.log('🔍 DEBUG - Transaction details:', JSON.stringify(txData, null, 2));
 
     // ✅ Build comprehensive response with all required fields
     // ✅ Use start_time and end_time directly from database
