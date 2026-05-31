@@ -1672,3 +1672,75 @@ export const unsuspendOrganizer = async (req, res) => {
     });
   }
 };
+
+
+// ✅ DIAGNOSTIC: Check transactions for a specific event
+export const diagnosticEventTransactions = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    
+    console.log('🔍 DIAGNOSTIC: Checking transactions for event:', eventId);
+    
+    // Get event details
+    const { data: event } = await supabaseAdmin
+      .from('events')
+      .select('*')
+      .eq('id', eventId)
+      .single();
+    
+    // Get ALL transactions (no filters)
+    const { data: allTx } = await supabaseAdmin
+      .from('transactions')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    
+    // Get transactions for this specific event
+    const { data: eventTx } = await supabaseAdmin
+      .from('transactions')
+      .select('*')
+      .eq('event_id', eventId);
+    
+    // Get transactions with success status
+    const { data: successTx } = await supabaseAdmin
+      .from('transactions')
+      .select('*')
+      .eq('event_id', eventId)
+      .eq('status', 'success');
+    
+    return res.json({
+      success: true,
+      event: {
+        id: event?.id,
+        title: event?.title,
+        tickets_sold: event?.tickets_sold,
+        organizer_id: event?.organizer_id,
+      },
+      transactions: {
+        total_in_db: allTx?.length || 0,
+        for_this_event: eventTx?.length || 0,
+        successful_for_event: successTx?.length || 0,
+      },
+      recent_transactions: allTx?.slice(0, 10).map(t => ({
+        id: t.id,
+        event_id: t.event_id,
+        status: t.status,
+        buyer_email: t.buyer_email,
+        ticket_price: t.ticket_price,
+        created_at: t.created_at,
+      })),
+      event_transactions: eventTx?.map(t => ({
+        id: t.id,
+        status: t.status,
+        buyer_email: t.buyer_email,
+        ticket_price: t.ticket_price,
+        created_at: t.created_at,
+      })),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
