@@ -773,12 +773,17 @@ export const getEventStats = async (req, res) => {
 
     // Get all transactions for this event
     console.log('🔍 Querying transactions for event_id:', id);
+    console.log('🔍 DEBUG - Event ID type:', typeof id, 'Value:', id);
     const { data: allTransactions, error: txError } = await supabase
       .from('transactions')
       .select('*')
       .eq('event_id', id)
       .eq('status', 'success');
 
+    console.log('📊 All transactions for event:', allTransactions?.length ?? 0);
+    console.log('🔍 DEBUG - Query error:', txError);
+    console.log('🔍 DEBUG - Raw transaction data:', JSON.stringify(allTransactions, null, 2));
+    
     if (txError) {
       console.error('❌ Error fetching transactions:', txError);
       return res.status(500).json({
@@ -787,8 +792,7 @@ export const getEventStats = async (req, res) => {
         message: txError.message,
       });
     }
-
-    console.log('📊 All transactions for event:', allTransactions?.length ?? 0);
+    
     if (allTransactions && allTransactions.length > 0) {
       console.log('📋 Transaction details:');
       allTransactions.forEach((tx, idx) => {
