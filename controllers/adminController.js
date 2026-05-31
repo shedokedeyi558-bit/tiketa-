@@ -17,11 +17,12 @@ export const getAdminEvents = async (req, res) => {
     const expiryResult = await updateExpiredEvents();
     console.log('⏰ Expiry check result:', expiryResult);
 
-    // ✅ Fetch all events
+    // ✅ Fetch all events — narrow select, limit rows
     const { data: events, error: eventsError } = await supabase
       .from('events')
-      .select('*')
-      .order('date', { ascending: false });
+      .select('id, title, organizer_id, date, location, status, category, image_url, total_tickets, tickets_sold, created_at')
+      .order('date', { ascending: false })
+      .limit(100);
 
     if (eventsError) {
       console.error('❌ Failed to fetch events:', eventsError);
@@ -253,6 +254,12 @@ export const approveEvent = async (req, res) => {
     }
 
     console.log(`✅ Event ${id} approved successfully`);
+
+    // ✅ Clear public events cache so next request gets fresh data
+    try {
+      const { getAllEvents } = await import('./eventController.js');
+      if (getAllEvents._cache) getAllEvents._cache.clear();
+    } catch (_) {}
 
     // Send email notification to organizer
     try {
@@ -714,261 +721,138 @@ export const getDashboardStats = async (req, res) => {
       recentTransactions: [],
     };
 
-    // Query 1: Active events (with error handling)
-    try {
-      console.log('⏳ Querying active events from events table...');
-      const eventsResult = await supabase
-        .from('events')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'active');
-      if (eventsResult.error) {
-        console.error('❌ Active events query error:', {
-          message: eventsResult.error.message,
-          code: eventsResult.error.code,
-          details: eventsResult.error.details,
-        });
-      } else {
-        stats.activeEventsCount = eventsResult.count ?? 0;
-        console.log('✅ Active events:', stats.activeEventsCount);
-      }
-    } catch (err) {
-      console.error('❌ Active events query exception:', {
-        message: err.message,
-        stack: err.stack,
-      });
-    }
+    // ✅ Run all independent count queries in parallel
+    console.log('⏳ Running parallel stat queries...');
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
 
-    // Query 2: Total users (with error handling)
-    try {
-      console.log('⏳ Querying total users from profiles table...');
-      const usersResult = await supabase.from('profiles').select('id', { count: 'exact', head: true });
-      if (usersResult.error) {
-        console.error('❌ Users query error:', {
-          message: usersResult.error.message,
-          code: usersResult.error.code,
-          details: usersResult.error.details,
-        });
-      } else {
-        console.log('✅ Total users:', usersResult.count ?? 0);
-      }
-    } catch (err) {
-      console.error('❌ Users query exception:', {
-        message: err.message,
-        stack: err.stack,
-      });
-    }
-
-    // Query 3: All transactions (with error handling)
-    try {
-      console.log('⏳ Querying all transactions from transactions table...');
-      const transactionsResult = await supabase
+    const [
+      eventsResult,
+      organizersResult,
+      pendingEventsResult,
+      pendingWithdrawalsResult,
+      transactionsResult,
+      monthlyTxResult,
+    ] = await Promise.all([
+      supabase.from('events').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'organizer'),
+      supabase.from('events').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('withdrawals').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase
         .from('transactions')
         .select('id, ticket_price, total_amount, processing_fee, platform_commission, squadco_fee, organizer_earnings, buyer_name, event_id, status, created_at')
-        .order('created_at', { ascending: false });
-      
-      console.log('TRANSACTIONS QUERY RESULT:', JSON.stringify({
-        error: transactionsResult.error,
-        count: transactionsResult.data?.length,
-        firstItem: transactionsResult.data?.[0],
-        statuses: transactionsResult.data?.map(t => t.status)
-      }));
-      
-      if (transactionsResult.error) {
-        console.error('❌ Transactions query error:', {
-          message: transactionsResult.error.message,
-          code: transactionsResult.error.code,
-          details: transactionsResult.error.details,
-        });
-      } else if (transactionsResult.data && transactionsResult.data.length > 0) {
-        console.log('📊 Transactions fetched:', transactionsResult.data.length);
-        console.log('📊 Raw transaction data:', JSON.stringify(transactionsResult.data, null, 2));
-        
-        // ✅ DEBUG: Log all unique status values
-        const uniqueStatuses = [...new Set(transactionsResult.data.map(t => t.status))];
-        console.log('📊 Unique transaction statuses:', uniqueStatuses);
-        
-        const successTransactions = transactionsResult.data.filter(t => t.status === 'success') || [];
-        const pendingTransactions = transactionsResult.data.filter(t => t.status === 'pending') || [];
-
-        console.log('📊 Success transactions:', successTransactions.length);
-        console.log('📊 Pending transactions:', pendingTransactions.length);
-        console.log('📊 Success transactions data:', JSON.stringify(successTransactions, null, 2));
-
-        stats.ticketsSold = Number(successTransactions.length || 0);
-        stats.successfulPayments = Number(successTransactions.length || 0);
-        stats.pendingPayments = Number(pendingTransactions.length || 0);
-        stats.totalRevenue = Number(successTransactions.reduce((sum, t) => sum + Number(t.total_amount || 0), 0) || 0);
-        stats.platformCommission = Number(successTransactions.reduce((sum, t) => sum + Number(t.platform_commission || 0), 0) || 0);
-        stats.totalProcessingFees = Number(successTransactions.reduce((sum, t) => sum + Number(t.processing_fee || 0), 0) || 0);
-        stats.squadcoCharges = Number(successTransactions.reduce((sum, t) => sum + Number(t.squadco_fee || 0), 0) || 0);
-        stats.organizerEarnings = Number(successTransactions.reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0) || 0);
-        
-        // ✅ CRITICAL: Platform Net Profit = sum of platform_commission only
-        console.log('💰 Platform Net Profit Calculation:', {
-          platformCommission: stats.platformCommission,
-          formula: 'sum of platform_commission',
-          result: stats.platformCommission,
-        });
-        
-        stats.platformNetProfit = Number(stats.platformCommission.toFixed(2));
-
-        // ✅ Get event IDs from recent transactions and fetch event names
-        const recentSuccessTransactions = successTransactions.slice(0, 5);
-        const eventIds = [...new Set(recentSuccessTransactions.map(t => t.event_id).filter(Boolean))];
-        
-        let eventMap = {};
-        if (eventIds.length > 0) {
-          try {
-            const eventsResult = await supabase
-              .from('events')
-              .select('id, title')
-              .in('id', eventIds);
-            
-            if (eventsResult.data) {
-              eventMap = Object.fromEntries(eventsResult.data.map(e => [e.id, e.title]));
-            }
-          } catch (eventErr) {
-            console.error('⚠️ Error fetching event names:', eventErr.message);
-          }
-        }
-
-        // ✅ Build recent transactions with event names
-        stats.recentTransactions = recentSuccessTransactions.map(t => {
-          const displayName = t.buyer_name || t.buyer_email || 'Unknown';
-          console.log(`📋 Transaction ${t.id.substring(0, 8)}... - Buyer: ${displayName} (buyer_name: ${t.buyer_name}, buyer_email: ${t.buyer_email})`);
-          return {
-            id: t.id,
-            buyer_name: displayName,
-            event_title: eventMap[t.event_id] || 'Unknown Event',
-            event_id: t.event_id,
-            ticket_price: Number(t.ticket_price || 0),
-            processing_fee: Number(t.processing_fee || 0),
-            platform_commission: Number(t.platform_commission || 0),
-            squadco_fee: Number(t.squadco_fee || 0),
-            organizer_earnings: Number(t.organizer_earnings || 0),
-            amount: Number(t.total_amount || 0),
-            created_at: t.created_at,
-          };
-        });
-
-        console.log('✅ Transactions stats:', {
-          successful: stats.successfulPayments,
-          pending: stats.pendingPayments,
-          revenue: stats.totalRevenue,
-          commission: stats.platformCommission,
-          processingFees: stats.totalProcessingFees,
-          squadcoCharges: stats.squadcoCharges,
-          organizerEarnings: stats.organizerEarnings,
-          platformNetProfit: stats.platformNetProfit,
-          recentTransactionsCount: stats.recentTransactions.length,
-        });
-      }
-    } catch (err) {
-      console.error('❌ Transactions query exception:', {
-        message: err.message,
-        stack: err.stack,
-      });
-    }
-
-    // Query 4: Organizers count (with error handling)
-    try {
-      console.log('⏳ Querying organizers from profiles table...');
-      const organizersResult = await supabase
-        .from('profiles')
-        .select('id', { count: 'exact', head: true })
-        .eq('role', 'organizer');
-      
-      if (organizersResult.error) {
-        console.error('❌ Organizers query error:', {
-          message: organizersResult.error.message,
-          code: organizersResult.error.code,
-          details: organizersResult.error.details,
-        });
-      } else {
-        stats.organizers = organizersResult.count ?? 0;
-        console.log('✅ Organizers:', stats.organizers);
-      }
-    } catch (err) {
-      console.error('❌ Organizers query exception:', {
-        message: err.message,
-        stack: err.stack,
-      });
-    }
-
-    // Query 5: Pending event approvals (with error handling)
-    try {
-      console.log('⏳ Querying pending event approvals from events table...');
-      const pendingEventsResult = await supabase
-        .from('events')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'pending');
-      
-      if (pendingEventsResult.error) {
-        console.error('❌ Pending events query error:', {
-          message: pendingEventsResult.error.message,
-          code: pendingEventsResult.error.code,
-          details: pendingEventsResult.error.details,
-        });
-      } else {
-        stats.pendingEventApprovals = pendingEventsResult.count ?? 0;
-        console.log('✅ Pending event approvals:', stats.pendingEventApprovals);
-      }
-    } catch (err) {
-      console.error('❌ Pending events query exception:', {
-        message: err.message,
-        stack: err.stack,
-      });
-    }
-
-    // Query 6: Pending withdrawals (with error handling)
-    try {
-      console.log('⏳ Querying pending withdrawals from withdrawals table...');
-      const pendingWithdrawalsResult = await supabase
-        .from('withdrawals')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'pending');
-      
-      if (pendingWithdrawalsResult.error) {
-        console.error('❌ Pending withdrawals query error:', {
-          message: pendingWithdrawalsResult.error.message,
-          code: pendingWithdrawalsResult.error.code,
-          details: pendingWithdrawalsResult.error.details,
-        });
-      } else {
-        stats.pendingWithdrawals = pendingWithdrawalsResult.count ?? 0;
-        console.log('✅ Pending withdrawals:', stats.pendingWithdrawals);
-      }
-    } catch (err) {
-      console.error('❌ Pending withdrawals query exception:', {
-        message: err.message,
-        stack: err.stack,
-      });
-    }
-
-    // Query 7: Monthly earnings - sum of platform_commission for current calendar month
-    try {
-      console.log('⏳ Querying monthly earnings...');
-      const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
-
-      const { data: monthlyTx, error: monthlyErr } = await supabase
+        .order('created_at', { ascending: false })
+        .limit(500),
+      supabase
         .from('transactions')
         .select('platform_commission')
         .eq('status', 'success')
         .gte('created_at', monthStart)
-        .lt('created_at', monthEnd);
+        .lt('created_at', monthEnd),
+    ]);
 
-      if (monthlyErr) {
-        console.error('❌ Monthly earnings query error:', monthlyErr.message);
-      } else {
-        stats.monthlyEarnings = Number(
-          (monthlyTx || []).reduce((sum, t) => sum + Number(t.platform_commission || 0), 0).toFixed(2)
-        );
-        console.log('✅ Monthly earnings:', stats.monthlyEarnings);
+    console.log('✅ Parallel queries complete');
+
+    // Query 1: Active events
+    if (eventsResult.error) {
+      console.error('❌ Active events query error:', eventsResult.error.message);
+    } else {
+      stats.activeEventsCount = eventsResult.count ?? 0;
+      console.log('✅ Active events:', stats.activeEventsCount);
+    }
+
+    // Query 2: Organizers count
+    if (organizersResult.error) {
+      console.error('❌ Organizers query error:', organizersResult.error.message);
+    } else {
+      stats.organizers = organizersResult.count ?? 0;
+      console.log('✅ Organizers:', stats.organizers);
+    }
+
+    // Query 3: Pending event approvals
+    if (pendingEventsResult.error) {
+      console.error('❌ Pending events query error:', pendingEventsResult.error.message);
+    } else {
+      stats.pendingEventApprovals = pendingEventsResult.count ?? 0;
+      console.log('✅ Pending event approvals:', stats.pendingEventApprovals);
+    }
+
+    // Query 4: Pending withdrawals
+    if (pendingWithdrawalsResult.error) {
+      console.error('❌ Pending withdrawals query error:', pendingWithdrawalsResult.error.message);
+    } else {
+      stats.pendingWithdrawals = pendingWithdrawalsResult.count ?? 0;
+      console.log('✅ Pending withdrawals:', stats.pendingWithdrawals);
+    }
+
+    // Query 5: Transactions aggregation
+    if (transactionsResult.error) {
+      console.error('❌ Transactions query error:', transactionsResult.error.message);
+    } else if (transactionsResult.data && transactionsResult.data.length > 0) {
+      console.log('📊 Transactions fetched:', transactionsResult.data.length);
+
+      const successTransactions = transactionsResult.data.filter(t => t.status === 'success') || [];
+      const pendingTransactions = transactionsResult.data.filter(t => t.status === 'pending') || [];
+
+      stats.ticketsSold = Number(successTransactions.length || 0);
+      stats.successfulPayments = Number(successTransactions.length || 0);
+      stats.pendingPayments = Number(pendingTransactions.length || 0);
+      stats.totalRevenue = Number(successTransactions.reduce((sum, t) => sum + Number(t.total_amount || 0), 0) || 0);
+      stats.platformCommission = Number(successTransactions.reduce((sum, t) => sum + Number(t.platform_commission || 0), 0) || 0);
+      stats.totalProcessingFees = Number(successTransactions.reduce((sum, t) => sum + Number(t.processing_fee || 0), 0) || 0);
+      stats.squadcoCharges = Number(successTransactions.reduce((sum, t) => sum + Number(t.squadco_fee || 0), 0) || 0);
+      stats.organizerEarnings = Number(successTransactions.reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0) || 0);
+      stats.platformNetProfit = Number(stats.platformCommission.toFixed(2));
+
+      // Build recent transactions with event names
+      const recentSuccessTransactions = successTransactions.slice(0, 5);
+      const eventIds = [...new Set(recentSuccessTransactions.map(t => t.event_id).filter(Boolean))];
+      let eventMap = {};
+      if (eventIds.length > 0) {
+        try {
+          const eventsResult2 = await supabase.from('events').select('id, title').in('id', eventIds);
+          if (eventsResult2.data) {
+            eventMap = Object.fromEntries(eventsResult2.data.map(e => [e.id, e.title]));
+          }
+        } catch (eventErr) {
+          console.error('⚠️ Error fetching event names:', eventErr.message);
+        }
       }
-    } catch (err) {
-      console.error('❌ Monthly earnings query exception:', err.message);
+
+      stats.recentTransactions = recentSuccessTransactions.map(t => {
+        const displayName = t.buyer_name || t.buyer_email || 'Unknown';
+        return {
+          id: t.id,
+          buyer_name: displayName,
+          event_title: eventMap[t.event_id] || 'Unknown Event',
+          event_id: t.event_id,
+          ticket_price: Number(t.ticket_price || 0),
+          processing_fee: Number(t.processing_fee || 0),
+          platform_commission: Number(t.platform_commission || 0),
+          squadco_fee: Number(t.squadco_fee || 0),
+          organizer_earnings: Number(t.organizer_earnings || 0),
+          amount: Number(t.total_amount || 0),
+          created_at: t.created_at,
+        };
+      });
+
+      console.log('✅ Transactions stats compiled:', {
+        successful: stats.successfulPayments,
+        pending: stats.pendingPayments,
+        revenue: stats.totalRevenue,
+        platformNetProfit: stats.platformNetProfit,
+      });
+    }
+
+    // Query 6: Monthly earnings
+    if (monthlyTxResult.error) {
+      console.error('❌ Monthly earnings query error:', monthlyTxResult.error.message);
+    } else {
+      stats.monthlyEarnings = Number(
+        (monthlyTxResult.data || []).reduce((sum, t) => sum + Number(t.platform_commission || 0), 0).toFixed(2)
+      );
+      console.log('✅ Monthly earnings:', stats.monthlyEarnings);
     }
 
     // ✅ CRITICAL: Ensure all stats are numbers, never null/undefined (except arrays)

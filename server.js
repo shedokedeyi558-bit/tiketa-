@@ -53,6 +53,10 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// In-memory cache for stable public data
+const cache = new Map();
+const CACHE_TTL = 30 * 1000; // 30 seconds
+
 // Initialize express app
 const app = express();
 
@@ -162,62 +166,54 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
       return `${Math.floor(diffSec / 86400)}d ago`;
     }
 
-    // Fetch recent events (submissions, approvals, rejections, cancellations)
-    const { data: recentEvents } = await supabaseAdmin
-      .from('events')
-      .select('id, title, status, created_at, updated_at, organizer_id')
-      .order('updated_at', { ascending: false })
-      .limit(10);
-
-    // Fetch recent organizer signups
-    const { data: recentProfiles } = await supabaseAdmin
-      .from('profiles')
-      .select('id, full_name, email, role, created_at')
-      .eq('role', 'organizer')
-      .order('created_at', { ascending: false })
-      .limit(10);
-
-    // Fetch recent transactions
-    const { data: recentTransactions } = await supabaseAdmin
-      .from('transactions')
-      .select('id, created_at, total_amount, ticket_price, event_id, organizer_id, status')
-      .eq('status', 'success')
-      .order('created_at', { ascending: false })
-      .limit(10);
-
-    // Fetch recent withdrawals
-    const { data: recentWithdrawals } = await supabaseAdmin
-      .from('withdrawals')
-      .select('id, created_at, amount, status, organizer_id')
-      .order('created_at', { ascending: false })
-      .limit(10);
-
-    // Fetch event titles for transactions
-    const eventIds = [...new Set((recentTransactions || []).map(t => t.event_id))];
-    let eventTitles = {};
-    if (eventIds.length > 0) {
-      const { data: eventData } = await supabaseAdmin
+    // ✅ Run all 4 activity queries in parallel
+    const [
+      { data: recentEvents },
+      { data: recentProfiles },
+      { data: recentTransactions },
+      { data: recentWithdrawals },
+    ] = await Promise.all([
+      supabaseAdmin
         .from('events')
-        .select('id, title')
-        .in('id', eventIds);
-      (eventData || []).forEach(e => { eventTitles[e.id] = e.title; });
-    }
-
-    // Fetch organizer names for withdrawals
-    const withdrawalOrgIds = [...new Set((recentWithdrawals || []).map(w => w.organizer_id))];
-    
-    // Also fetch organizer names for events
-    const eventOrgIds = [...new Set((recentEvents || []).map(e => e.organizer_id))];
-    const allOrgIds = [...new Set([...withdrawalOrgIds, ...eventOrgIds])];
-    
-    let orgNames = {};
-    if (allOrgIds.length > 0) {
-      const { data: orgData } = await supabaseAdmin
+        .select('id, title, status, created_at, updated_at, organizer_id')
+        .order('updated_at', { ascending: false })
+        .limit(10),
+      supabaseAdmin
         .from('profiles')
-        .select('id, full_name')
-        .in('id', allOrgIds);
-      (orgData || []).forEach(o => { orgNames[o.id] = o.full_name; });
-    }
+        .select('id, full_name, email, role, created_at')
+        .eq('role', 'organizer')
+        .order('created_at', { ascending: false })
+        .limit(10),
+      supabaseAdmin
+        .from('transactions')
+        .select('id, created_at, total_amount, event_id, status')
+        .eq('status', 'success')
+        .order('created_at', { ascending: false })
+        .limit(10),
+      supabaseAdmin
+        .from('withdrawals')
+        .select('id, created_at, amount, status, organizer_id')
+        .order('created_at', { ascending: false })
+        .limit(10),
+    ]);
+
+    // ✅ Fetch event titles and organizer names in parallel
+    const txEventIds = [...new Set((recentTransactions || []).map(t => t.event_id).filter(Boolean))];
+    const eventOrgIds = [...new Set((recentEvents || []).map(e => e.organizer_id).filter(Boolean))];
+    const withdrawalOrgIds = [...new Set((recentWithdrawals || []).map(w => w.organizer_id).filter(Boolean))];
+    const allOrgIds = [...new Set([...eventOrgIds, ...withdrawalOrgIds])];
+
+    const [eventTitlesResult, orgNamesResult] = await Promise.all([
+      txEventIds.length > 0
+        ? supabaseAdmin.from('events').select('id, title').in('id', txEventIds)
+        : Promise.resolve({ data: [] }),
+      allOrgIds.length > 0
+        ? supabaseAdmin.from('profiles').select('id, full_name').in('id', allOrgIds)
+        : Promise.resolve({ data: [] }),
+    ]);
+
+    const eventTitles = Object.fromEntries((eventTitlesResult.data || []).map(e => [e.id, e.title]));
+    const orgNames = Object.fromEntries((orgNamesResult.data || []).map(o => [o.id, o.full_name]));
 
     // Build unified activity list
     const activities = [];

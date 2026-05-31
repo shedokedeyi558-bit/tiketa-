@@ -39,11 +39,12 @@ export const getOrganizerEvents = async (req, res) => {
       sortOrder: sortOrder ? 'asc' : 'desc',
     });
 
-    // ✅ Build query
+    // ✅ Build query — narrow select, filter at DB level, limit rows
     let query = supabase
       .from('events')
-      .select('*')
-      .eq('organizer_id', userId);
+      .select('id, title, description, image_url, date, start_time, end_time, end_date, location, category, status, organizer_id, ticket_types, total_tickets, tickets_sold, ticket_price, created_at, updated_at')
+      .eq('organizer_id', userId)
+      .limit(100);
 
     // ✅ Apply status filter
     if (status !== 'all') {
@@ -140,9 +141,19 @@ export const getAllEvents = async (req, res) => {
     console.log('⏰ Expiry check result:', expiryResult);
 
     // ✅ Parse query parameters - default to upcoming events only
-    const dateFilter = req.query.dateFilter || 'upcoming'; // 'all', 'upcoming', 'past' - default upcoming
-    const sortBy = req.query.sortBy || 'date'; // 'date', 'title'
-    const sortOrder = req.query.sortOrder === 'desc' ? false : true; // true = asc, false = desc
+    const dateFilter = req.query.dateFilter || 'upcoming';
+    const sortBy = req.query.sortBy || 'date';
+    const sortOrder = req.query.sortOrder === 'desc' ? false : true;
+
+    // ✅ Check in-memory cache (30s TTL, keyed by query params)
+    const cacheKey = `public_events:${dateFilter}:${sortBy}:${sortOrder}`;
+    const CACHE_TTL = 30 * 1000;
+    if (!getAllEvents._cache) getAllEvents._cache = new Map();
+    const cached = getAllEvents._cache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      console.log('⚡ Returning cached public events');
+      return res.json(cached.data);
+    }
 
     // ✅ Build query - always filter by active status AND future dates by default
     let query = supabase
@@ -219,7 +230,7 @@ export const getAllEvents = async (req, res) => {
 
     const eventsWithTickets = events;
 
-    return res.status(200).json({
+    const responseData = {
       success: true,
       message: 'Events fetched successfully',
       data: eventsWithTickets,
@@ -232,7 +243,12 @@ export const getAllEvents = async (req, res) => {
           sortOrder: sortOrder ? 'asc' : 'desc',
         },
       },
-    });
+    };
+
+    // ✅ Store in cache
+    getAllEvents._cache.set(cacheKey, { data: responseData, timestamp: Date.now() });
+
+    return res.status(200).json(responseData);
   } catch (error) {
     console.error('❌ Get All Events Error:', {
       message: error.message,
