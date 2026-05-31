@@ -19,6 +19,7 @@ import {
   suspendOrganizer,
   unsuspendOrganizer,
   diagnosticEventTransactions,
+  getMonthlyEarnings,
 } from '../controllers/adminController.js';
 import {
   getWithdrawalsController,
@@ -65,6 +66,9 @@ router.get('/stats', getDashboardStats);
 
 // Revenue analytics
 router.get('/revenue', getRevenueAnalytics);
+
+// Monthly earnings breakdown
+router.get('/monthly-earnings', getMonthlyEarnings);
 
 // Transaction diagnostics (for debugging)
 router.get('/diagnostics/transactions', getTransactionDiagnostics);

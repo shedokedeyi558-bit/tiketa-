@@ -1776,3 +1776,83 @@ export const diagnosticEventTransactions = async (req, res) => {
     });
   }
 };
+
+// ✅ GET /api/v1/admin/monthly-earnings
+// Returns all successful transactions within a date range with aggregated totals
+export const getMonthlyEarnings = async (req, res) => {
+  try {
+    const { from, to } = req.query;
+
+    if (!from || !to) {
+      return res.status(400).json({
+        success: false,
+        message: 'Query params "from" and "to" are required (ISO date strings)',
+      });
+    }
+
+    console.log('📊 Fetching monthly earnings:', { from, to });
+
+    // Fetch all successful transactions in the date range
+    const { data: transactions, error: txError } = await supabaseAdmin
+      .from('transactions')
+      .select('id, buyer_name, buyer_email, event_id, total_amount, platform_commission, created_at')
+      .eq('status', 'success')
+      .gte('created_at', from)
+      .lt('created_at', to)
+      .order('created_at', { ascending: false });
+
+    if (txError) {
+      console.error('❌ Monthly earnings query error:', txError);
+      return res.status(500).json({
+        success: false,
+        message: txError.message,
+      });
+    }
+
+    const rows = transactions || [];
+
+    // Fetch event titles for the transactions
+    const eventIds = [...new Set(rows.map(t => t.event_id).filter(Boolean))];
+    let eventMap = {};
+    if (eventIds.length > 0) {
+      const { data: events } = await supabaseAdmin
+        .from('events')
+        .select('id, title')
+        .in('id', eventIds);
+      eventMap = Object.fromEntries((events || []).map(e => [e.id, e.title]));
+    }
+
+    // Compute aggregates
+    const totalRevenue = Number(rows.reduce((sum, t) => sum + Number(t.total_amount || 0), 0).toFixed(2));
+    const platformEarnings = Number(rows.reduce((sum, t) => sum + Number(t.platform_commission || 0), 0).toFixed(2));
+    const txCount = rows.length;
+
+    const shaped = rows.map(t => ({
+      id: t.id,
+      buyer_name: t.buyer_name,
+      buyer_email: t.buyer_email,
+      event_title: eventMap[t.event_id] || 'Unknown Event',
+      total_amount: Number(t.total_amount || 0),
+      platform_commission: Number(t.platform_commission || 0),
+      created_at: t.created_at,
+    }));
+
+    console.log('✅ Monthly earnings fetched:', { totalRevenue, platformEarnings, txCount });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalRevenue,
+        platformEarnings,
+        txCount,
+        transactions: shaped,
+      },
+    });
+  } catch (error) {
+    console.error('❌ getMonthlyEarnings error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
