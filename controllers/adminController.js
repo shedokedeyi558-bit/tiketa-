@@ -202,178 +202,193 @@ export const getPendingEvents = async (req, res) => {
 
 // Approve event
 export const approveEvent = async (req, res) => {
+  // ✅ 10-second timeout — return 504 rather than hanging indefinitely
+  const timeoutId = setTimeout(() => {
+    if (!res.headersSent) {
+      console.error('❌ approveEvent timed out after 10s');
+      res.status(504).json({ success: false, message: 'Request timed out' });
+    }
+  }, 10000);
+
   try {
     const { id } = req.params;
 
     console.log(`✅ Approving event ${id}...`);
 
-    // Get event details before updating
+    // ✅ Fetch only needed fields — no select('*')
     const { data: event, error: fetchError } = await supabase
       .from('events')
-      .select('*')
+      .select('id, title, organizer_id')
       .eq('id', id)
       .single();
 
     if (fetchError || !event) {
-      console.error('❌ Event not found:', fetchError);
-      return res.status(404).json({
-        success: false,
-        message: 'Event not found',
-      });
+      clearTimeout(timeoutId);
+      return res.status(404).json({ success: false, message: 'Event not found' });
     }
 
-    // Get organizer details from profiles
-    let { data: approveOrg } = await supabaseAdmin
-      .from('profiles')
-      .select('full_name, email')
-      .eq('id', event.organizer_id)
-      .single();
-
-    // Fallback: get email from auth.users if not in profiles
-    if (!approveOrg?.email) {
-      const { data: { user: authUser } } = await supabaseAdmin.auth.admin.getUserById(event.organizer_id);
-      approveOrg = {
-        full_name: approveOrg?.full_name || 'Organizer',
-        email: authUser?.email || ''
-      };
-    }
-
-    console.log('📧 Organizer email for notification:', approveOrg?.email);
-
-    // Update event status to active
+    // ✅ DB update — this is the only thing that must complete before responding
     const { data: updatedEvent, error: updateError } = await supabase
       .from('events')
       .update({ status: 'active' })
       .eq('id', id)
-      .select()
+      .select('id, title, status')
       .single();
 
     if (updateError) {
+      clearTimeout(timeoutId);
       console.error('❌ Failed to approve event:', updateError);
-      throw updateError;
+      return res.status(500).json({ success: false, message: updateError.message });
     }
 
     console.log(`✅ Event ${id} approved successfully`);
 
-    // ✅ Clear public events cache so next request gets fresh data
+    // ✅ Clear public events cache
     try {
       const { getAllEvents } = await import('./eventController.js');
       if (getAllEvents._cache) getAllEvents._cache.clear();
     } catch (_) {}
 
-    // Send email notification to organizer
-    try {
-      const { sendEventApprovedEmail } = await import('../services/emailService.js');
-      await sendEventApprovedEmail(
-        approveOrg?.email || '',
-        approveOrg?.full_name || 'Organizer',
-        event.title
-      );
-      console.log('✅ Approval email sent to organizer');
-    } catch (emailError) {
-      console.error('⚠️ Failed to send approval email:', emailError);
-      // Don't fail the approval if email fails
-    }
-
-    return res.status(200).json({
+    // ✅ Respond immediately — don't wait for email
+    clearTimeout(timeoutId);
+    res.status(200).json({
       success: true,
       message: 'Event approved successfully',
       data: updatedEvent,
     });
+
+    // ✅ Fire-and-forget: fetch organizer email and send notification AFTER response
+    (async () => {
+      try {
+        let orgEmail = '';
+        let orgName = 'Organizer';
+
+        // Try profiles first (fast)
+        const { data: profile } = await supabaseAdmin
+          .from('profiles')
+          .select('full_name, email')
+          .eq('id', event.organizer_id)
+          .single();
+
+        if (profile?.email) {
+          orgEmail = profile.email;
+          orgName = profile.full_name || 'Organizer';
+        } else {
+          // Fallback to auth.users only if profiles has no email
+          const { data: { user: authUser } } = await supabaseAdmin.auth.admin.getUserById(event.organizer_id);
+          orgEmail = authUser?.email || '';
+        }
+
+        if (orgEmail) {
+          const { sendEventApprovedEmail } = await import('../services/emailService.js');
+          await sendEventApprovedEmail(orgEmail, orgName, event.title);
+          console.log('✅ Approval email sent to organizer (background)');
+        }
+      } catch (bgErr) {
+        console.error('⚠️ Background approval email failed (non-blocking):', bgErr.message);
+      }
+    })();
+
   } catch (error) {
+    clearTimeout(timeoutId);
     console.error('❌ Error approving event:', error);
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: error.message });
+    }
   }
 };
 
 // Reject event
 export const rejectEvent = async (req, res) => {
+  // ✅ 10-second timeout
+  const timeoutId = setTimeout(() => {
+    if (!res.headersSent) {
+      console.error('❌ rejectEvent timed out after 10s');
+      res.status(504).json({ success: false, message: 'Request timed out' });
+    }
+  }, 10000);
+
   try {
     const { id } = req.params;
     const rejection_reason = req.body.rejection_reason || req.body.reason;
 
     console.log(`❌ Rejecting event ${id}...`);
 
-    // Get event details before updating
+    // ✅ Fetch only needed fields
     const { data: event, error: fetchError } = await supabase
       .from('events')
-      .select('*')
+      .select('id, title, organizer_id')
       .eq('id', id)
       .single();
 
     if (fetchError || !event) {
-      console.error('❌ Event not found:', fetchError);
-      return res.status(404).json({
-        success: false,
-        message: 'Event not found',
-      });
+      clearTimeout(timeoutId);
+      return res.status(404).json({ success: false, message: 'Event not found' });
     }
 
-    // Get organizer details from profiles
-    let { data: rejectOrg } = await supabaseAdmin
-      .from('profiles')
-      .select('full_name, email')
-      .eq('id', event.organizer_id)
-      .single();
-
-    // Fallback: get email from auth.users if not in profiles
-    if (!rejectOrg?.email) {
-      const { data: { user: authUser } } = await supabaseAdmin.auth.admin.getUserById(event.organizer_id);
-      rejectOrg = {
-        full_name: rejectOrg?.full_name || 'Organizer',
-        email: authUser?.email || ''
-      };
-    }
-
-    console.log('📧 Organizer email for notification:', rejectOrg?.email);
-
-    // Update event status to rejected
+    // ✅ DB update first
     const { data: updatedEvent, error: updateError } = await supabase
       .from('events')
-      .update({ 
+      .update({
         status: 'rejected',
         rejection_reason: rejection_reason || 'No reason provided'
       })
       .eq('id', id)
-      .select()
+      .select('id, title, status, rejection_reason')
       .single();
 
     if (updateError) {
+      clearTimeout(timeoutId);
       console.error('❌ Failed to reject event:', updateError);
-      throw updateError;
+      return res.status(500).json({ success: false, message: updateError.message });
     }
 
     console.log(`✅ Event ${id} rejected successfully`);
 
-    // Send email notification to organizer
-    try {
-      const { sendEventRejectedEmail } = await import('../services/emailService.js');
-      await sendEventRejectedEmail(
-        rejectOrg?.email || '',
-        rejectOrg?.full_name || 'Organizer',
-        event.title,
-        rejection_reason || 'No reason provided'
-      );
-      console.log('✅ Rejection email sent to organizer');
-    } catch (emailError) {
-      console.error('⚠️ Failed to send rejection email:', emailError);
-      // Don't fail the rejection if email fails
-    }
-
-    return res.status(200).json({
+    // ✅ Respond immediately
+    clearTimeout(timeoutId);
+    res.status(200).json({
       success: true,
       message: 'Event rejected successfully',
       data: updatedEvent,
     });
+
+    // ✅ Fire-and-forget: send rejection email in background
+    (async () => {
+      try {
+        let orgEmail = '';
+        let orgName = 'Organizer';
+
+        const { data: profile } = await supabaseAdmin
+          .from('profiles')
+          .select('full_name, email')
+          .eq('id', event.organizer_id)
+          .single();
+
+        if (profile?.email) {
+          orgEmail = profile.email;
+          orgName = profile.full_name || 'Organizer';
+        } else {
+          const { data: { user: authUser } } = await supabaseAdmin.auth.admin.getUserById(event.organizer_id);
+          orgEmail = authUser?.email || '';
+        }
+
+        if (orgEmail) {
+          const { sendEventRejectedEmail } = await import('../services/emailService.js');
+          await sendEventRejectedEmail(orgEmail, orgName, event.title, rejection_reason || 'No reason provided');
+          console.log('✅ Rejection email sent to organizer (background)');
+        }
+      } catch (bgErr) {
+        console.error('⚠️ Background rejection email failed (non-blocking):', bgErr.message);
+      }
+    })();
+
   } catch (error) {
+    clearTimeout(timeoutId);
     console.error('❌ Error rejecting event:', error);
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: error.message });
+    }
   }
 };
 
