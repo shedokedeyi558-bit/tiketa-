@@ -51,14 +51,17 @@ export const updateExpiredEvents = async () => {
       };
     }
 
-    // ✅ Find events that have expired
-    const expiredEventIds = [];
+    // ✅ Find events that have expired and update them directly
+    let expiredCount = 0;
 
     for (const event of eventsToCheck) {
       try {
         // Use end_date if available, otherwise fall back to date
         const expiryDateStr = event.end_date || event.date;
         if (!expiryDateStr) continue;
+        
+        // Log the fields being used
+        console.log('[EXPIRE FIELDS]', event.title, 'end_time:', event.end_time, 'end_date:', event.end_date);
         
         // Build full datetime string
         const timeStr = event.end_time || '23:59:59';
@@ -69,10 +72,6 @@ export const updateExpiredEvents = async () => {
         const WAT_OFFSET_MS = 60 * 60 * 1000; // WAT is UTC+1, so subtract 1 hour to get UTC
         const endTimeAsIfUTC = new Date(fullDateTimeStr + 'Z').getTime();
         const eventEndMs = endTimeAsIfUTC - WAT_OFFSET_MS;
-        
-        console.log('[EXPIRE CHECK]', event.title, 'stored:', fullDateTimeStr, 'adjustedUTC:', new Date(eventEndMs).toISOString(), 'nowUTC:', new Date(Date.now()).toISOString(), 'diff minutes:', Math.floor((Date.now() - eventEndMs) / 60000), 'hasEnded:', (Date.now() - eventEndMs) > (5 * 60 * 1000));
-        
-        const hasEnded = (Date.now() - eventEndMs) > (5 * 60 * 1000);
         
         if (isNaN(eventEndMs)) continue;
         
@@ -86,63 +85,35 @@ export const updateExpiredEvents = async () => {
           if (eventEndMs <= eventStartMs) continue; // skip invalid events
         }
         
+        const hasEnded = (Date.now() - eventEndMs) > (5 * 60 * 1000);
+        
+        console.log('[EXPIRE CHECK]', event.title, 'stored:', fullDateTimeStr, 'adjustedUTC:', new Date(eventEndMs).toISOString(), 'nowUTC:', new Date(Date.now()).toISOString(), 'diff minutes:', Math.floor((Date.now() - eventEndMs) / 60000), 'hasEnded:', hasEnded);
+        
+        // If event has ended, update it directly
         if (hasEnded) {
-          expiredEventIds.push(event.id);
-          console.log(`⏰ Event expired: ${event.title} (${event.status})`);
+          const newStatus = event.status === 'active' ? 'ended' : 'expired';
+          const { error } = await supabaseAdmin
+            .from('events')
+            .update({ status: newStatus })
+            .eq('id', event.id);
+          
+          if (error) {
+            console.log('[EXPIRE ERROR]', event.title, error.message);
+          } else {
+            console.log('[EXPIRE SUCCESS]', event.title, 'updated to', newStatus);
+            expiredCount++;
+          }
         }
       } catch (e) {
         console.warn(`⚠️ Error parsing event ${event.id}:`, e.message);
       }
     }
 
-    console.log(`🔍 Found ${expiredEventIds.length} expired events (active + pending)`);
-
-    // ✅ Separate expired events by status and update accordingly
-    if (expiredEventIds.length > 0) {
-      // Get the events to check their current status
-      const { data: expiredEvents } = await supabaseAdmin
-        .from('events')
-        .select('id, status')
-        .in('id', expiredEventIds);
-
-      if (expiredEvents && expiredEvents.length > 0) {
-        // Separate by status
-        const activeExpiredIds = expiredEvents.filter(e => e.status === 'active').map(e => e.id);
-        const pendingExpiredIds = expiredEvents.filter(e => e.status === 'pending').map(e => e.id);
-
-        // Update active events to 'ended'
-        if (activeExpiredIds.length > 0) {
-          const { error: activeError } = await supabaseAdmin
-            .from('events')
-            .update({ status: 'ended' })
-            .in('id', activeExpiredIds);
-
-          if (activeError) {
-            console.error('❌ Error updating active events to ended:', activeError);
-          } else {
-            console.log(`✅ Updated ${activeExpiredIds.length} active events to 'ended' status`);
-          }
-        }
-
-        // Update pending events to 'expired'
-        if (pendingExpiredIds.length > 0) {
-          const { error: pendingError } = await supabaseAdmin
-            .from('events')
-            .update({ status: 'expired' })
-            .in('id', pendingExpiredIds);
-
-          if (pendingError) {
-            console.error('❌ Error updating pending events to expired:', pendingError);
-          } else {
-            console.log(`✅ Updated ${pendingExpiredIds.length} pending events to 'expired' status`);
-          }
-        }
-      }
-    }
+    console.log(`🔍 Updated ${expiredCount} expired events`);
 
     return {
       success: true,
-      expired: expiredEventIds.length,
+      expired: expiredCount,
       error: null,
     };
   } catch (error) {
