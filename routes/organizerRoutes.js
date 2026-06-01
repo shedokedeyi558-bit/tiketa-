@@ -1,6 +1,7 @@
 import express from 'express';
 import { verifyToken } from '../middlewares/authMiddleware.js';
 import { deleteEventIfNoSales } from '../services/eventExpiryService.js';
+import checkinRoutes from './checkinRoutes.js';
 
 const router = express.Router();
 
@@ -468,5 +469,9 @@ router.get('/past-events', verifyToken, async (req, res) => {
     });
   }
 });
+
+// ✅ Check-in routes: GET/POST /api/v1/organizer/events/:eventId/checkin
+//                    POST /api/v1/organizer/events/:eventId/checkin-token
+router.use('/events/:eventId', checkinRoutes);
 
 export default router;
