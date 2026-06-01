@@ -236,13 +236,20 @@ router.get('/transactions', verifyToken, async (req, res) => {
 
     // Enrich transactions with event titles
     const enrichedTransactions = (transactions || []).map(t => {
-      const cartItems = t.squadco_response?.cartItems || [];
-      const attendees = t.squadco_response?.attendees || [];
+      const sr = typeof t.squadco_response === 'string'
+        ? (() => { try { return JSON.parse(t.squadco_response); } catch(_) { return {}; } })()
+        : (t.squadco_response || {});
+      const cartItems = sr.cartItems || [];
+      const attendees = sr.attendees || [];
       const quantity = cartItems.length > 0
         ? cartItems.reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0)
-        : 1;
-      const ticketTypeId = cartItems.length > 0 ? (cartItems[0]?.id || null) : null;
+        : (t.quantity || 1);
       const buyerPhone = attendees.length > 0 ? (attendees[0]?.phone || attendees[0]?.phoneNumber || null) : null;
+
+      // tier_id / tier_name are stored in squadco_response by the verify controller
+      // (ticket_type_id column is UUID type and cannot store the string IDs the frontend sends)
+      const tierName = sr.tier_name || null;
+      const tierId   = sr.tier_id   || null;
 
       return {
         id: t.id,
@@ -256,7 +263,9 @@ router.get('/transactions', verifyToken, async (req, res) => {
         platform_commission: Number(t.platform_commission || 0),
         organizer_earnings: Number(t.organizer_earnings || 0),
         quantity,
-        ticket_type_id: ticketTypeId,
+        ticket_type_id: tierId,        // string tier ID from squadco_response
+        ticket_type_name: tierName,    // tier name e.g. "VIP", "Regular"
+        squadco_response: t.squadco_response, // full JSONB for frontend to read
         reference: t.reference,
         status: t.status,
         created_at: t.created_at
@@ -340,15 +349,22 @@ router.get('/events/:eventId/transactions', verifyToken, async (req, res) => {
       });
     }
 
-    // Shape the response - extract quantity from squadco_response.cartItems
+    // Shape the response - extract tier info from squadco_response
     const shaped = (transactions || []).map(t => {
-      const cartItems = t.squadco_response?.cartItems || [];
-      const attendees = t.squadco_response?.attendees || [];
+      const sr = typeof t.squadco_response === 'string'
+        ? (() => { try { return JSON.parse(t.squadco_response); } catch(_) { return {}; } })()
+        : (t.squadco_response || {});
+      const cartItems = sr.cartItems || [];
+      const attendees = sr.attendees || [];
       const quantity = cartItems.length > 0
         ? cartItems.reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0)
-        : 1;
-      const ticketTypeId = cartItems.length > 0 ? (cartItems[0]?.id || null) : null;
+        : (t.quantity || 1);
       const buyerPhone = attendees.length > 0 ? (attendees[0]?.phone || attendees[0]?.phoneNumber || null) : null;
+
+      // tier_id / tier_name are stored in squadco_response by the verify controller
+      // (ticket_type_id column is UUID type and cannot store the string IDs the frontend sends)
+      const tierName = sr.tier_name || null;
+      const tierId   = sr.tier_id   || null;
 
       return {
         id: t.id,
@@ -361,7 +377,9 @@ router.get('/events/:eventId/transactions', verifyToken, async (req, res) => {
         platform_commission: Number(t.platform_commission || 0),
         organizer_earnings: Number(t.organizer_earnings || 0),
         quantity,
-        ticket_type_id: ticketTypeId,
+        ticket_type_id: tierId,        // string tier ID from squadco_response
+        ticket_type_name: tierName,    // tier name e.g. "VIP", "Regular"
+        squadco_response: t.squadco_response, // full JSONB for frontend to read
         reference: t.reference,
         status: t.status,
         created_at: t.created_at
