@@ -86,10 +86,11 @@ router.get('/debug/transaction/:reference', async (req, res) => {
     const reference = req.params.reference.trim().toUpperCase();
 
     // Fetch all rows for this reference (there should be 1 per cart item after expansion)
+    // Row 0 = exact reference, rows 1+ = reference_1, reference_2, etc.
     const { data: rows, error } = await supabaseAdmin
       .from('transactions')
       .select('id, reference, status, ticket_type_id, quantity, total_amount, ticket_price, processing_fee, created_at, verified_at, squadco_response')
-      .ilike('reference', reference)
+      .ilike('reference', `${reference}%`)
       .order('created_at', { ascending: true });
 
     if (error) {

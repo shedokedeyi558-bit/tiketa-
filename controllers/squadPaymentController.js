@@ -597,12 +597,12 @@ export const verifyPaymentController = async (req, res) => {
     // ─── Idempotency guard ────────────────────────────────────────────────────
     // If per-type rows were already written (e.g. frontend retried verify),
     // skip re-insertion to avoid duplicates.
-    // We expect exactly cartItems.length rows after expansion.
-    // If we already have >= cartItems.length success rows, skip.
+    // Row 0 has reference = TXN_XXX, rows 1+ have reference = TXN_XXX_1, TXN_XXX_2 etc.
+    // Use a prefix search to find all of them.
     const { data: existingPerTypeRows } = await supabase
       .from('transactions')
       .select('id, ticket_type_id')
-      .eq('reference', transaction.reference)
+      .ilike('reference', `${transaction.reference}%`)
       .eq('status', 'success');
 
     const existingCount = Array.isArray(existingPerTypeRows) ? existingPerTypeRows.length : 0;
@@ -684,7 +684,9 @@ export const verifyPaymentController = async (req, res) => {
         const { data: newTx, error: newTxErr } = await supabase
           .from('transactions')
           .insert([{
-            reference: transaction.reference,
+            // Append _N suffix so this row has a unique reference
+            // (the transactions table has a unique constraint on reference)
+            reference: `${transaction.reference}_${i}`,
             event_id: transaction.event_id,
             organizer_id: transaction.organizer_id,
             buyer_email: transaction.buyer_email,
@@ -776,8 +778,7 @@ export const verifyPaymentController = async (req, res) => {
         console.log('💰 Crediting organizer wallet: ₦' + totalOrganizerEarnings);
         const walletResult = await creditOrganizerWallet(
           transaction.organizer_id,
-          totalOrganizerEarnings,
-          transaction.reference
+          totalOrganizerEarnings
         );
         if (walletResult.success) {
           console.log(`✅ Wallet credited: ₦${totalOrganizerEarnings} to organizer ${transaction.organizer_id}`);
