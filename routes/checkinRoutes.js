@@ -142,7 +142,7 @@ router.get('/checkin', checkinAuth, async (req, res) => {
     // Case-insensitive reference lookup for this event
     const { data: transactions, error: txError } = await supabaseAdmin
       .from('transactions')
-      .select('id, reference, buyer_name, buyer_email, ticket_type_id, quantity, status, checked_in_at, checked_in_by, event_id')
+      .select('id, reference, buyer_name, buyer_email, ticket_type_id, quantity, status, checked_in_at, checked_in_by, event_id, squadco_response')
       .ilike('reference', ref.trim())
       .eq('status', 'success')
       .limit(5);
@@ -162,8 +162,13 @@ router.get('/checkin', checkinAuth, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Ticket not valid for this event' });
     }
 
-    // Resolve ticket type name from event's ticket_types JSONB
+    // Resolve ticket type name:
+    // 1. Try ticket_type_id (UUID) against event's ticket_types JSONB
+    // 2. Fall back to squadco_response.tier_name (stored for non-UUID string tier IDs)
     let ticketTypeName = null;
+    const srRaw = tx.squadco_response;
+    const sr = typeof srRaw === 'string' ? (() => { try { return JSON.parse(srRaw); } catch(_) { return {}; } })() : (srRaw || {});
+
     if (tx.ticket_type_id) {
       const { data: event } = await supabaseAdmin
         .from('events')
@@ -174,6 +179,11 @@ router.get('/checkin', checkinAuth, async (req, res) => {
       const ticketTypes = event?.ticket_types || [];
       const matched = ticketTypes.find(tt => tt.id === tx.ticket_type_id);
       ticketTypeName = matched?.name || null;
+    }
+
+    // Fallback: tier_name stored in squadco_response when ticket_type_id is not a UUID
+    if (!ticketTypeName && sr.tier_name) {
+      ticketTypeName = sr.tier_name;
     }
 
     const alreadyCheckedIn = !!tx.checked_in_at;
@@ -189,7 +199,7 @@ router.get('/checkin', checkinAuth, async (req, res) => {
           reference: tx.reference,
           buyer_name: tx.buyer_name,
           buyer_email: tx.buyer_email,
-          ticket_type_id: tx.ticket_type_id,
+          ticket_type_id: tx.ticket_type_id || sr.tier_id || null,
           ticket_type_name: ticketTypeName,
           quantity: tx.quantity || 1,
           status: tx.status,

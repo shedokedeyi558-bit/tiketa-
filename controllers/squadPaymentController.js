@@ -623,13 +623,10 @@ export const verifyPaymentController = async (req, res) => {
     if (cartItems.length > 0 && !alreadyExpanded) {
       // ── Row 0: update the original transaction ──────────────────────────────
       const firstItem = cartItems[0];
-      // Resolve ticket_type_id: try every field name the frontend might use
-      const firstTypeId = firstItem.id
-        || firstItem.ticket_type_id
-        || firstItem.ticketTypeId
-        || firstItem.typeId
-        || firstItem.type_id
-        || null;
+      // Resolve tier ID — cart items use string IDs like "1780299070611-uck9go" (not UUIDs)
+      // ticket_type_id column is UUID type so we CANNOT write these string IDs there.
+      // Instead we store tier_id and tier_name inside squadco_response JSONB on each row.
+      const firstTypeId = firstItem.id || firstItem.ticket_type_id || firstItem.ticketTypeId || firstItem.typeId || firstItem.type_id || null;
       const firstTypeName = firstTypeId ? (ticketTypeMap[firstTypeId] || firstItem.name || firstItem.typeName || firstItem.type_name || null) : null;
       const firstItemQty = parseInt(firstItem.quantity) || 1;
       const firstItemUnitPrice = parseFloat(firstItem.price || firstItem.ticket_price || 0);
@@ -639,12 +636,18 @@ export const verifyPaymentController = async (req, res) => {
       const firstPlatformCommission = firstItemPrice * 0.03;
       const firstOrganizerEarnings = firstItemPrice * 0.97;
 
-      console.log(`[PER-TYPE] Updating row 0: ticket_type_id=${firstTypeId} (${firstTypeName}), qty=${firstItemQty}, unit=₦${firstItemUnitPrice}, total=₦${firstItemPrice}`);
+      console.log(`[PER-TYPE] Updating row 0: tier_id=${firstTypeId} (${firstTypeName}), qty=${firstItemQty}, unit=₦${firstItemUnitPrice}, total=₦${firstItemPrice}`);
 
       const { error: updateFirstErr } = await supabase
         .from('transactions')
         .update({
-          ticket_type_id: firstTypeId,
+          // ticket_type_id is UUID type — cannot store string tier IDs there
+          // Store tier info in squadco_response JSONB instead
+          squadco_response: {
+            ...(typeof transaction.squadco_response === 'object' ? transaction.squadco_response : {}),
+            tier_id: firstTypeId,
+            tier_name: firstTypeName,
+          },
           ticket_price: firstItemPrice,
           processing_fee: orderProcessingFee,
           total_amount: firstItemPrice + orderProcessingFee,
@@ -659,19 +662,14 @@ export const verifyPaymentController = async (req, res) => {
       if (updateFirstErr) {
         console.error('[PER-TYPE] Failed to update row 0:', updateFirstErr.message);
       } else {
-        console.log('[PER-TYPE] Row 0 updated successfully');
+        console.log(`[PER-TYPE] Row 0 updated: tier_id=${firstTypeId}, tier_name=${firstTypeName}`);
       }
 
       // ── Rows 1+: insert one row per additional cart item ───────────────────
       for (let i = 1; i < cartItems.length; i++) {
         const item = cartItems[i];
-        // Resolve ticket_type_id: try every field name the frontend might use
-        const typeId = item.id
-          || item.ticket_type_id
-          || item.ticketTypeId
-          || item.typeId
-          || item.type_id
-          || null;
+        // Resolve tier ID for this specific item (NOT firstItem)
+        const typeId = item.id || item.ticket_type_id || item.ticketTypeId || item.typeId || item.type_id || null;
         const typeName = typeId ? (ticketTypeMap[typeId] || item.name || item.typeName || item.type_name || null) : null;
         const itemQty = parseInt(item.quantity) || 1;
         const itemUnitPrice = parseFloat(item.price || item.ticket_price || 0);
@@ -679,7 +677,7 @@ export const verifyPaymentController = async (req, res) => {
         const itemPlatformCommission = itemPrice * 0.03;
         const itemOrganizerEarnings = itemPrice * 0.97;
 
-        console.log(`[PER-TYPE] Inserting row ${i}: ticket_type_id=${typeId} (${typeName}), qty=${itemQty}, unit=₦${itemUnitPrice}, total=₦${itemPrice}`);
+        console.log(`[PER-TYPE] Inserting row ${i}: tier_id=${typeId} (${typeName}), qty=${itemQty}, unit=₦${itemUnitPrice}, total=₦${itemPrice}`);
 
         const { data: newTx, error: newTxErr } = await supabase
           .from('transactions')
@@ -692,7 +690,12 @@ export const verifyPaymentController = async (req, res) => {
             buyer_email: transaction.buyer_email,
             buyer_name: transaction.buyer_name,
             buyer_phone: buyerPhone,
-            ticket_type_id: typeId,
+            // ticket_type_id is UUID type — store tier info in squadco_response instead
+            squadco_response: {
+              ...(typeof transaction.squadco_response === 'object' ? transaction.squadco_response : {}),
+              tier_id: typeId,
+              tier_name: typeName,
+            },
             ticket_price: itemPrice,
             processing_fee: 0,          // fee is on row 0 only
             total_amount: itemPrice,
@@ -703,7 +706,6 @@ export const verifyPaymentController = async (req, res) => {
             attendees: attendees,
             status: 'success',
             verified_at: verifiedAt,
-            squadco_response: transaction.squadco_response,
             ip_address: transaction.ip_address,
             user_agent: transaction.user_agent,
           }])
