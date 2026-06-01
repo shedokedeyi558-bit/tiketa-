@@ -402,6 +402,7 @@ export const getEventById = async (req, res) => {
       
       // Status
       status: event.status,
+      require_attendee_names: event.require_attendee_names || false,
       
       // Metadata
       created_at: event.created_at,
@@ -471,7 +472,7 @@ export const createEvent = async (req, res) => {
       mediaUrl: req.body.mediaUrl,
     });
     
-    const { title, description, date, end_date, location, total_tickets, category, image_url, image_base64, ticket_types } = req.body;
+    const { title, description, date, end_date, location, total_tickets, category, image_url, image_base64, ticket_types, require_attendee_names } = req.body;
 
     // ✅ CRITICAL: Validate organizer is authenticated
     if (!organizerId) {
@@ -668,6 +669,7 @@ export const createEvent = async (req, res) => {
           category: category || 'General',
           image_url: finalImageUrl, // ✅ Use uploaded image URL or provided URL
           ticket_types: ticket_types || [], // ✅ Save ticket_types as-is from frontend (JSONB column - source of truth)
+          require_attendee_names: require_attendee_names === true, // ✅ Save attendee names toggle
         },
       ])
       .select()
