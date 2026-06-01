@@ -335,7 +335,7 @@ router.get('/events/:eventId/transactions', verifyToken, async (req, res) => {
     // Fetch all successful transactions for this event
     const { data: transactions, error: txError } = await supabase
       .from('transactions')
-      .select('id, reference, buyer_name, buyer_email, ticket_price, total_amount, platform_commission, organizer_earnings, status, created_at, squadco_response')
+      .select('id, reference, buyer_name, buyer_email, ticket_price, total_amount, platform_commission, organizer_earnings, quantity, status, created_at, squadco_response')
       .eq('event_id', eventId)
       .eq('status', 'success')
       .order('created_at', { ascending: false });
@@ -385,6 +385,16 @@ router.get('/events/:eventId/transactions', verifyToken, async (req, res) => {
         created_at: t.created_at
       };
     });
+
+    // Diagnostic log — remove after confirming frontend receives tier data
+    if (shaped.length > 0) {
+      console.log('[SHAPE] row0:', JSON.stringify({
+        reference: shaped[0].reference,
+        ticket_type_id: shaped[0].ticket_type_id,
+        ticket_type_name: shaped[0].ticket_type_name,
+        has_squadco_response: !!shaped[0].squadco_response,
+      }));
+    }
 
     return res.status(200).json({
       success: true,
