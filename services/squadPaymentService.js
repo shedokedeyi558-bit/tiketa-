@@ -139,7 +139,7 @@ export const verifySquadPayment = async (transactionRef) => {
           Authorization: `Bearer ${SQUADCO_API_KEY}`,
           'Content-Type': 'application/json',
         },
-        timeout: 30000, // 30 second timeout (increased from 10000)
+        timeout: 8000, // 8 second timeout — must stay under Vercel's 10s limit
       }
     );
 

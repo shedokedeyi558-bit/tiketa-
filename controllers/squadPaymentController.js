@@ -181,7 +181,17 @@ export const initiatePaymentController = async (req, res) => {
             squadco_fee: squadcoFee,
             organizer_earnings: organizerEarnings,
             status: 'pending',
-            squadco_response: { cartItems, attendees, amount, buyerEmail },
+            // Normalize cartItems so ticket_type_id is always stored under item.id
+            // regardless of what field name the frontend used (id, ticket_type_id, typeId, etc.)
+            squadco_response: {
+              cartItems: (cartItems || []).map(item => ({
+                ...item,
+                id: item.id || item.ticket_type_id || item.ticketTypeId || item.typeId || item.type_id || null,
+              })),
+              attendees,
+              amount,
+              buyerEmail,
+            },
             ip_address: req.ip || 'unknown',
             user_agent: req.headers['user-agent'] || 'unknown',
           },
@@ -317,7 +327,8 @@ export const verifyPaymentController = async (req, res) => {
       setTimeout(() => reject(new Error('Supabase transaction lookup timed out after 5 seconds')), 5000)
     );
     
-    const { data: transaction, error: txError } = await Promise.race([
+    // Use let so we can reassign if fallback search finds it
+    let { data: transaction, error: txError } = await Promise.race([
       supabase
         .from('transactions')
         .select('*')
@@ -361,7 +372,7 @@ export const verifyPaymentController = async (req, res) => {
 
       if (fallbackTransaction) {
         console.log('✅ Found via fallback search:', fallbackTransaction.reference);
-        // Use the fallback transaction
+        // Reassign to fallback result (requires let declaration above)
         transaction = fallbackTransaction;
       } else {
         return res.status(404).json({
@@ -410,6 +421,7 @@ export const verifyPaymentController = async (req, res) => {
             created_at: transaction.created_at,
             verified_at: transaction.verified_at,
           },
+          ticket: null,
         },
       });
     }
@@ -423,13 +435,20 @@ export const verifyPaymentController = async (req, res) => {
       });
     }
 
-    // 🔑 CRITICAL: Call Squad verification service with separate error handling
+    // 🔑 CRITICAL: Call Squad verification service with 8s timeout (Vercel limit is 10s)
     console.log('🔄 Verifying with Squad API...');
     console.log('📤 Calling Squad API with reference:', normalizedReference);
     
     let result;
     try {
-      result = await verifySquadPayment(normalizedReference);
+      // Race Squad API call against an 8-second hard deadline so we always return JSON
+      const squadTimeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Squad API verification timed out after 8 seconds')), 8000)
+      );
+      result = await Promise.race([
+        verifySquadPayment(normalizedReference),
+        squadTimeoutPromise,
+      ]);
       console.log('✅ Squad API call completed:', {
         success: result.success,
         error: result.error,
@@ -533,9 +552,9 @@ export const verifyPaymentController = async (req, res) => {
 
     console.log('✅ Transaction updated to success');
 
-    // ✅ Extract cartItems and attendees from the ORIGINAL in-memory transaction
-    // CRITICAL: Do this BEFORE any further DB operations that might overwrite squadco_response
-    // Also handle case where squadco_response is stored as a JSON string
+    // ─── Extract cartItems / attendees from the stored squadco_response ──────────
+    // The initiation controller stored { cartItems, attendees, amount, buyerEmail }
+    // in squadco_response before calling Squad, so it's always available here.
     let rawResponse = transaction.squadco_response || {};
     if (typeof rawResponse === 'string') {
       try { rawResponse = JSON.parse(rawResponse); } catch (_) { rawResponse = {}; }
@@ -546,11 +565,15 @@ export const verifyPaymentController = async (req, res) => {
       ? (attendees[0]?.phone || attendees[0]?.phoneNumber || null)
       : null;
 
-    console.log('🛒 Cart items for per-type transactions:', JSON.stringify(cartItems));
-    console.log('👥 Attendees:', JSON.stringify(attendees));
-    console.log('🛒 Cart items count:', cartItems.length);
+    // ── Deep diagnostic: log every key/value on every cart item ──────────────
+    console.log(`[PER-TYPE] cartItems count: ${cartItems.length}`);
+    cartItems.forEach((item, idx) => {
+      console.log(`[PER-TYPE] cartItems[${idx}] keys:`, Object.keys(item));
+      console.log(`[PER-TYPE] cartItems[${idx}] full:`, JSON.stringify(item));
+    });
+    console.log('[PER-TYPE] attendees count:', attendees.length);
 
-    // ✅ Fetch event details for email and ticket_type names
+    // ─── Fetch event details (needed for email + ticket_type name resolution) ───
     let eventData = null;
     try {
       const { data: ev } = await supabase
@@ -563,31 +586,68 @@ export const verifyPaymentController = async (req, res) => {
       console.error('⚠️ Failed to fetch event for post-payment processing:', e.message);
     }
 
-    // ✅ Create one transaction row per ticket type in cartItems
-    const perTypeTxIds = [transaction.id];
+    // Build a lookup map: ticket_type_id → name from the event's ticket_types JSONB
+    const ticketTypeMap = {};
+    if (Array.isArray(eventData?.ticket_types)) {
+      for (const tt of eventData.ticket_types) {
+        if (tt.id) ticketTypeMap[tt.id] = tt.name || tt.type || 'Ticket';
+      }
+    }
 
-    if (cartItems.length > 0) {
-      // Update the original pending transaction to reflect the FIRST cart item
+    // ─── Idempotency guard ────────────────────────────────────────────────────
+    // If per-type rows were already written (e.g. frontend retried verify),
+    // skip re-insertion to avoid duplicates.
+    // We expect exactly cartItems.length rows after expansion.
+    // If we already have >= cartItems.length success rows, skip.
+    const { data: existingPerTypeRows } = await supabase
+      .from('transactions')
+      .select('id, ticket_type_id')
+      .eq('reference', transaction.reference)
+      .eq('status', 'success');
+
+    const existingCount = Array.isArray(existingPerTypeRows) ? existingPerTypeRows.length : 0;
+    // "already expanded" means we have MORE rows than just the original one
+    // (i.e. the per-type insert loop already ran on a previous call)
+    const alreadyExpanded = existingCount > 1;
+
+    console.log(`[PER-TYPE] idempotency check: existingCount=${existingCount}, cartItems.length=${cartItems.length}, alreadyExpanded=${alreadyExpanded}`);
+
+    // ─── Per-ticket-type transaction rows ─────────────────────────────────────
+    // Strategy: one DB row per cart item (ticket type).
+    //   • Row 0  → update the original pending transaction in-place
+    //   • Row 1+ → insert new rows, each with their own ticket_type_id
+    // The processing fee (charged once per order) lives on row 0 only.
+    const perTypeTxIds = [transaction.id];
+    const verifiedAt = new Date().toISOString();
+
+    if (cartItems.length > 0 && !alreadyExpanded) {
+      // ── Row 0: update the original transaction ──────────────────────────────
       const firstItem = cartItems[0];
+      // Resolve ticket_type_id: try every field name the frontend might use
+      const firstTypeId = firstItem.id
+        || firstItem.ticket_type_id
+        || firstItem.ticketTypeId
+        || firstItem.typeId
+        || firstItem.type_id
+        || null;
+      const firstTypeName = firstTypeId ? (ticketTypeMap[firstTypeId] || firstItem.name || firstItem.typeName || firstItem.type_name || null) : null;
       const firstItemQty = parseInt(firstItem.quantity) || 1;
       const firstItemUnitPrice = parseFloat(firstItem.price || firstItem.ticket_price || 0);
       const firstItemPrice = firstItemUnitPrice * firstItemQty;
-      // Processing fee only on first row (charged once for the whole order)
-      const firstProcessingFee = cartItems.length === 1
-        ? (firstItemPrice <= 5000 ? 100 : Math.round((firstItemPrice * 1.5) / 100))
-        : 0;
+      // Processing fee belongs entirely on the first row (charged once per order)
+      const orderProcessingFee = transaction.processing_fee || 0;
       const firstPlatformCommission = firstItemPrice * 0.03;
       const firstOrganizerEarnings = firstItemPrice * 0.97;
 
-      console.log(`[PER-TYPE] Updating row 0 (original): ticket_type_id=${firstItem.id}, qty=${firstItemQty}, price=${firstItemPrice}`);
+      console.log(`[PER-TYPE] Updating row 0: ticket_type_id=${firstTypeId} (${firstTypeName}), qty=${firstItemQty}, unit=₦${firstItemUnitPrice}, total=₦${firstItemPrice}`);
 
       const { error: updateFirstErr } = await supabase
         .from('transactions')
         .update({
-          ticket_type_id: firstItem.id || null,
+          ticket_type_id: firstTypeId,
           ticket_price: firstItemPrice,
-          processing_fee: firstProcessingFee,
-          total_amount: firstItemPrice + firstProcessingFee,
+          processing_fee: orderProcessingFee,
+          total_amount: firstItemPrice + orderProcessingFee,
           platform_commission: firstPlatformCommission,
           organizer_earnings: firstOrganizerEarnings,
           quantity: firstItemQty,
@@ -597,21 +657,29 @@ export const verifyPaymentController = async (req, res) => {
         .eq('id', transaction.id);
 
       if (updateFirstErr) {
-        console.error('[PER-TYPE] Failed to update first row:', updateFirstErr.message);
+        console.error('[PER-TYPE] Failed to update row 0:', updateFirstErr.message);
       } else {
-        console.log('[PER-TYPE] First row updated successfully');
+        console.log('[PER-TYPE] Row 0 updated successfully');
       }
 
-      // Insert one row for each remaining cart item (index 1+)
+      // ── Rows 1+: insert one row per additional cart item ───────────────────
       for (let i = 1; i < cartItems.length; i++) {
         const item = cartItems[i];
+        // Resolve ticket_type_id: try every field name the frontend might use
+        const typeId = item.id
+          || item.ticket_type_id
+          || item.ticketTypeId
+          || item.typeId
+          || item.type_id
+          || null;
+        const typeName = typeId ? (ticketTypeMap[typeId] || item.name || item.typeName || item.type_name || null) : null;
         const itemQty = parseInt(item.quantity) || 1;
         const itemUnitPrice = parseFloat(item.price || item.ticket_price || 0);
         const itemPrice = itemUnitPrice * itemQty;
         const itemPlatformCommission = itemPrice * 0.03;
         const itemOrganizerEarnings = itemPrice * 0.97;
 
-        console.log(`[PER-TYPE] Inserting row ${i}: ticket_type_id=${item.id}, qty=${itemQty}, price=${itemPrice}`);
+        console.log(`[PER-TYPE] Inserting row ${i}: ticket_type_id=${typeId} (${typeName}), qty=${itemQty}, unit=₦${itemUnitPrice}, total=₦${itemPrice}`);
 
         const { data: newTx, error: newTxErr } = await supabase
           .from('transactions')
@@ -622,9 +690,9 @@ export const verifyPaymentController = async (req, res) => {
             buyer_email: transaction.buyer_email,
             buyer_name: transaction.buyer_name,
             buyer_phone: buyerPhone,
-            ticket_type_id: item.id || null,
+            ticket_type_id: typeId,
             ticket_price: itemPrice,
-            processing_fee: 0,
+            processing_fee: 0,          // fee is on row 0 only
             total_amount: itemPrice,
             platform_commission: itemPlatformCommission,
             squadco_fee: 0,
@@ -632,7 +700,7 @@ export const verifyPaymentController = async (req, res) => {
             quantity: itemQty,
             attendees: attendees,
             status: 'success',
-            verified_at: new Date().toISOString(),
+            verified_at: verifiedAt,
             squadco_response: transaction.squadco_response,
             ip_address: transaction.ip_address,
             user_agent: transaction.user_agent,
@@ -641,87 +709,108 @@ export const verifyPaymentController = async (req, res) => {
           .single();
 
         if (newTxErr) {
-          console.error(`[PER-TYPE] Failed to insert row ${i} for item ${item.id}:`, newTxErr.message);
+          console.error(`[PER-TYPE] Failed to insert row ${i} for ticket_type_id=${typeId}:`, newTxErr.message);
         } else {
-          console.log(`[PER-TYPE] Row ${i} inserted: ${newTx.id} for ticket_type_id=${item.id}`);
+          console.log(`[PER-TYPE] Row ${i} inserted: id=${newTx.id}, ticket_type_id=${typeId}`);
           perTypeTxIds.push(newTx.id);
         }
       }
 
-      console.log(`[PER-TYPE] Done. Created ${perTypeTxIds.length} rows for ${cartItems.length} cart items`);
-    } else {
-      // No cartItems — just store attendees on the original transaction
-      console.warn('[PER-TYPE] No cartItems found — storing attendees only on original row');
+      console.log(`[PER-TYPE] Done. ${perTypeTxIds.length} row(s) for ${cartItems.length} cart item(s).`);
+
+    } else if (cartItems.length === 0) {
+      // No cartItems — store attendees on the original row only
+      console.warn('[PER-TYPE] No cartItems found — storing attendees on original row only');
       await supabase
         .from('transactions')
-        .update({ attendees: attendees, buyer_phone: buyerPhone })
+        .update({ attendees, buyer_phone: buyerPhone })
         .eq('id', transaction.id);
+
+    } else {
+      // alreadyExpanded — rows were written on a previous verify call, skip
+      console.log('[PER-TYPE] Per-type rows already exist — skipping re-insertion (idempotent)');
+      for (const row of existingPerTypeRows) {
+        if (row.id !== transaction.id) perTypeTxIds.push(row.id);
+      }
     }
 
-    // ✅ Update event tickets_sold count
+    // ─── Update event tickets_sold count ──────────────────────────────────────
     console.log('🎫 Updating event tickets_sold count...');
     try {
       const totalQuantity = cartItems.length > 0
         ? cartItems.reduce((acc, item) => acc + (parseInt(item.quantity) || 1), 0)
         : 1;
 
-      const currentTicketsSold = eventData?.tickets_sold || 0;
-      const newTicketsSold = currentTicketsSold + totalQuantity;
+      // Only increment if we actually wrote new rows this call
+      if (!alreadyExpanded) {
+        const currentTicketsSold = eventData?.tickets_sold || 0;
+        const newTicketsSold = currentTicketsSold + totalQuantity;
 
-      const { error: updateEventError } = await supabase
-        .from('events')
-        .update({ tickets_sold: newTicketsSold })
-        .eq('id', transaction.event_id);
+        const { error: updateEventError } = await supabase
+          .from('events')
+          .update({ tickets_sold: newTicketsSold })
+          .eq('id', transaction.event_id);
 
-      if (updateEventError) {
-        console.error('⚠️ Failed to update event tickets_sold:', updateEventError);
+        if (updateEventError) {
+          console.error('⚠️ Failed to update event tickets_sold:', updateEventError);
+        } else {
+          console.log('✅ Event tickets_sold updated to', newTicketsSold);
+        }
       } else {
-        console.log('✅ Event tickets_sold updated to', newTicketsSold);
+        console.log('[PER-TYPE] Skipping tickets_sold increment — already counted on first verify');
       }
     } catch (eventError) {
       console.error('⚠️ Error updating event tickets_sold (non-blocking):', eventError);
     }
 
-    // ✅ Credit organizer wallet (total organizer earnings across all cart items)
-    const totalOrganizerEarnings = cartItems.length > 0
-      ? cartItems.reduce((sum, item) => {
-          const itemPrice = parseFloat(item.price || item.ticket_price || 0) * (parseInt(item.quantity) || 1);
-          return sum + (itemPrice * 0.97);
-        }, 0)
-      : transaction.organizer_earnings;
+    // ─── Credit organizer wallet ───────────────────────────────────────────────
+    if (!alreadyExpanded) {
+      const totalOrganizerEarnings = cartItems.length > 0
+        ? cartItems.reduce((sum, item) => {
+            const itemPrice = parseFloat(item.price || item.ticket_price || 0) * (parseInt(item.quantity) || 1);
+            return sum + (itemPrice * 0.97);
+          }, 0)
+        : (transaction.organizer_earnings || 0);
 
-    if (totalOrganizerEarnings > 0) {
-      console.log('💰 Crediting organizer wallet:', totalOrganizerEarnings);
-      const walletResult = await creditOrganizerWallet(
-        transaction.organizer_id,
-        totalOrganizerEarnings,
-        transaction.reference
-      );
-      if (walletResult.success) {
-        console.log(`✅ Wallet credited: ₦${totalOrganizerEarnings} to organizer ${transaction.organizer_id}`);
-      } else {
-        console.error('⚠️ Wallet credit failed (non-blocking):', walletResult.error);
+      if (totalOrganizerEarnings > 0) {
+        console.log('💰 Crediting organizer wallet: ₦' + totalOrganizerEarnings);
+        const walletResult = await creditOrganizerWallet(
+          transaction.organizer_id,
+          totalOrganizerEarnings,
+          transaction.reference
+        );
+        if (walletResult.success) {
+          console.log(`✅ Wallet credited: ₦${totalOrganizerEarnings} to organizer ${transaction.organizer_id}`);
+        } else {
+          console.error('⚠️ Wallet credit failed (non-blocking):', walletResult.error);
+        }
+      }
+    } else {
+      console.log('[PER-TYPE] Skipping wallet credit — already credited on first verify');
+    }
+
+    // ─── Send confirmation email ───────────────────────────────────────────────
+    if (!alreadyExpanded) {
+      try {
+        const { sendTicketPurchaseConfirmation } = await import('../services/emailService.js');
+        await sendTicketPurchaseConfirmation({
+          buyerName: transaction.buyer_name,
+          buyerEmail: transaction.buyer_email,
+          reference: transaction.reference,
+          event: eventData,
+          cartItems,
+          attendees,
+          totalAmount: transaction.total_amount,
+        });
+        console.log('✅ Ticketa confirmation email sent to', transaction.buyer_email);
+      } catch (emailErr) {
+        console.error('⚠️ Failed to send confirmation email (non-blocking):', emailErr.message);
       }
     }
 
-    // ✅ BUG 2 FIX: Send Ticketa custom confirmation email
-    try {
-      const { sendTicketPurchaseConfirmation } = await import('../services/emailService.js');
-      await sendTicketPurchaseConfirmation({
-        buyerName: transaction.buyer_name,
-        buyerEmail: transaction.buyer_email,
-        reference: transaction.reference,
-        event: eventData,
-        cartItems,
-        attendees,
-        totalAmount: transaction.total_amount,
-      });
-      console.log('✅ Ticketa confirmation email sent to', transaction.buyer_email);
-    } catch (emailErr) {
-      console.error('⚠️ Failed to send confirmation email (non-blocking):', emailErr.message);
-    }
-
     // 🔑 CRITICAL: Return full transaction data in response
+    // Shape matches what the frontend payment-confirmation page expects:
+    // { success: true, data: { transaction: {...}, ticket: {...} } }
     console.log('📤 Returning verification response with full transaction data:', {
       reference: transaction.reference,
       amount: transaction.total_amount,
@@ -735,7 +824,7 @@ export const verifyPaymentController = async (req, res) => {
       data: {
         status: 'success',
         reference: transaction.reference,
-        amount: transaction.total_amount, // ✅ Use DB value, not Squad response
+        amount: transaction.total_amount,
         email: transaction.buyer_email,
         transaction: {
           id: transaction.id,
@@ -747,10 +836,11 @@ export const verifyPaymentController = async (req, res) => {
           processing_fee: transaction.processing_fee,
           platform_commission: transaction.platform_commission,
           organizer_earnings: transaction.organizer_earnings,
-          status: transaction.status,
+          status: 'success', // Use literal — in-memory object still has old status
           created_at: transaction.created_at,
-          verified_at: transaction.verified_at,
+          verified_at: new Date().toISOString(),
         },
+        ticket: null, // Tickets are sent via email; set to null if not generated inline
       },
     });
   } catch (error) {
