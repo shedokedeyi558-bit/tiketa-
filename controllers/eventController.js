@@ -75,10 +75,31 @@ export const getOrganizerEvents = async (req, res) => {
 
     console.log('✅ Events found:', data?.length ?? 0);
 
-    // ✅ CRITICAL: Calculate tickets remaining for each event with proper logic
+    // ✅ Calculate tickets_sold dynamically from transactions table
+    // This is always accurate regardless of manual counter drift
+    const eventIds = (data ?? []).map(e => e.id).filter(Boolean);
+    let ticketsSoldByEvent = {};
+    if (eventIds.length > 0) {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabaseAdmin = createClient(
+        process.env.SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY
+      );
+      const { data: txCounts } = await supabaseAdmin
+        .from('transactions')
+        .select('event_id, quantity')
+        .in('event_id', eventIds)
+        .eq('status', 'success');
+
+      for (const tx of (txCounts || [])) {
+        ticketsSoldByEvent[tx.event_id] = (ticketsSoldByEvent[tx.event_id] || 0) + (parseInt(tx.quantity) || 1);
+      }
+    }
+
+    // ✅ Calculate tickets remaining for each event
     const eventsWithTickets = (data ?? []).map(event => {
       const totalTickets = event.total_tickets;
-      const ticketsSold = event.tickets_sold || 0;
+      const ticketsSold = ticketsSoldByEvent[event.id] || 0; // dynamic from transactions
 
       let displayTotalTickets;
       let displayTicketsRemaining;
@@ -93,6 +114,7 @@ export const getOrganizerEvents = async (req, res) => {
 
       return {
         ...event,
+        tickets_sold: ticketsSold,          // ✅ dynamic
         total_tickets: displayTotalTickets,
         tickets_remaining: displayTicketsRemaining,
       };
