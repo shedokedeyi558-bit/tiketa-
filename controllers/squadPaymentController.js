@@ -596,21 +596,25 @@ export const verifyPaymentController = async (req, res) => {
 
     // ─── Idempotency guard ────────────────────────────────────────────────────
     // If per-type rows were already written (e.g. frontend retried verify),
-    // skip re-insertion to avoid duplicates.
-    // Row 0 has reference = TXN_XXX, rows 1+ have reference = TXN_XXX_1, TXN_XXX_2 etc.
-    // Use a prefix search to find all of them.
+    // skip re-insertion and tickets_sold increment to avoid duplicates.
+    //
+    // Detection rules:
+    // • Multi-item cart: existingCount > 1 (extra rows TXN_XXX_1, TXN_XXX_2 etc.)
+    // • Single-item cart: check if the original row already has `quantity` set
+    //   (quantity is NULL until the per-type update runs)
     const { data: existingPerTypeRows } = await supabase
       .from('transactions')
-      .select('id, ticket_type_id')
+      .select('id, ticket_type_id, quantity')
       .ilike('reference', `${transaction.reference}%`)
       .eq('status', 'success');
 
     const existingCount = Array.isArray(existingPerTypeRows) ? existingPerTypeRows.length : 0;
-    // "already expanded" means we have MORE rows than just the original one
-    // (i.e. the per-type insert loop already ran on a previous call)
-    const alreadyExpanded = existingCount > 1;
+    const originalRow = existingPerTypeRows?.find(r => r.id === transaction.id);
+    // alreadyExpanded = multiple rows written (multi-item cart idempotency)
+    //                OR original row already has quantity set (single-item cart idempotency)
+    const alreadyExpanded = existingCount > 1 || (originalRow?.quantity != null && originalRow?.quantity > 0);
 
-    console.log(`[PER-TYPE] idempotency check: existingCount=${existingCount}, cartItems.length=${cartItems.length}, alreadyExpanded=${alreadyExpanded}`);
+    console.log(`[PER-TYPE] idempotency check: existingCount=${existingCount}, originalRow.quantity=${originalRow?.quantity}, cartItems.length=${cartItems.length}, alreadyExpanded=${alreadyExpanded}`);
 
     // ─── Per-ticket-type transaction rows ─────────────────────────────────────
     // Strategy: one DB row per cart item (ticket type).
@@ -747,18 +751,29 @@ export const verifyPaymentController = async (req, res) => {
 
       // Only increment if we actually wrote new rows this call
       if (!alreadyExpanded) {
-        const currentTicketsSold = eventData?.tickets_sold || 0;
-        const newTicketsSold = currentTicketsSold + totalQuantity;
-
-        const { error: updateEventError } = await supabase
+        // ✅ Atomic increment — read then write with fresh DB value to avoid stale-read double-count
+        const { data: freshEvent, error: freshErr } = await supabase
           .from('events')
-          .update({ tickets_sold: newTicketsSold })
-          .eq('id', transaction.event_id);
+          .select('tickets_sold')
+          .eq('id', transaction.event_id)
+          .single();
 
-        if (updateEventError) {
-          console.error('⚠️ Failed to update event tickets_sold:', updateEventError);
+        if (freshErr) {
+          console.error('⚠️ Failed to re-fetch event for tickets_sold:', freshErr.message);
         } else {
-          console.log('✅ Event tickets_sold updated to', newTicketsSold);
+          const currentTicketsSold = freshEvent?.tickets_sold || 0;
+          const newTicketsSold = currentTicketsSold + totalQuantity;
+
+          const { error: updateEventError } = await supabase
+            .from('events')
+            .update({ tickets_sold: newTicketsSold })
+            .eq('id', transaction.event_id);
+
+          if (updateEventError) {
+            console.error('⚠️ Failed to update event tickets_sold:', updateEventError);
+          } else {
+            console.log(`✅ Event tickets_sold: ${currentTicketsSold} → ${newTicketsSold} (+${totalQuantity})`);
+          }
         }
       } else {
         console.log('[PER-TYPE] Skipping tickets_sold increment — already counted on first verify');
