@@ -183,110 +183,134 @@ router.delete('/events/:id', verifyToken, async (req, res) => {
 });
 
 /**
+ * ─── Shared helper: group flat transaction rows by base reference ────────────
+ * Per-type rows have references like TXN_XXX_1, TXN_XXX_2.
+ * The primary row is TXN_XXX (no suffix).
+ * Groups them into one purchase object with a ticket_types array.
+ */
+function groupTransactionsByReference(rows, eventTitleMap = {}) {
+  // Map: baseRef → { primary row, all rows }
+  const groups = new Map();
+
+  for (const row of rows) {
+    const sr = typeof row.squadco_response === 'string'
+      ? (() => { try { return JSON.parse(row.squadco_response); } catch(_) { return {}; } })()
+      : (row.squadco_response || {});
+
+    // Strip _N suffix to find the canonical base reference
+    const baseRef = row.reference.replace(/_\d+$/, '');
+    const isPrimary = row.reference === baseRef;
+
+    if (!groups.has(baseRef)) {
+      groups.set(baseRef, { primary: null, rows: [] });
+    }
+    const group = groups.get(baseRef);
+    if (isPrimary) group.primary = { row, sr };
+    group.rows.push({ row, sr });
+  }
+
+  const result = [];
+
+  for (const [baseRef, { primary, rows: groupRows }] of groups) {
+    // Fall back to first row if no primary (shouldn't happen)
+    const { row: p, sr: pSr } = primary || groupRows[0];
+
+    const attendees = pSr.attendees || [];
+    const buyerPhone = attendees.length > 0
+      ? (attendees[0]?.phone || attendees[0]?.phoneNumber || null)
+      : null;
+
+    // Aggregate totals across all rows in this group
+    const totalAmount       = groupRows.reduce((s, { row: r }) => s + Number(r.total_amount || 0), 0);
+    const orgEarnings       = groupRows.reduce((s, { row: r }) => s + Number(r.organizer_earnings || 0), 0);
+    const platCommission    = groupRows.reduce((s, { row: r }) => s + Number(r.platform_commission || 0), 0);
+    const totalQty          = groupRows.reduce((s, { row: r }) => s + (parseInt(r.quantity) || 1), 0);
+
+    // Build per-type breakdown
+    const ticketTypes = groupRows.map(({ row: r, sr: rSr }) => ({
+      ticket_type_id:   rSr.tier_id   || null,
+      ticket_type_name: rSr.tier_name || null,
+      quantity:         parseInt(r.quantity) || 1,
+      ticket_price:     Number(r.ticket_price || 0),
+      organizer_earnings:  Number(r.organizer_earnings || 0),
+      platform_commission: Number(r.platform_commission || 0),
+    }));
+
+    result.push({
+      id:                  p.id,
+      reference:           baseRef,
+      event_id:            p.event_id,
+      event_title:         eventTitleMap[p.event_id] || null,
+      buyer_name:          p.buyer_name,
+      buyer_email:         p.buyer_email,
+      buyer_phone:         buyerPhone,
+      total_amount:        Number(totalAmount.toFixed(2)),
+      organizer_earnings:  Number(orgEarnings.toFixed(2)),
+      platform_commission: Number(platCommission.toFixed(2)),
+      // First ticket type's price for backward compat
+      ticket_price:        Number((groupRows[0].row.ticket_price || 0)),
+      quantity:            totalQty,
+      status:              p.status,
+      created_at:          p.created_at,
+      attendees:           attendees,
+      ticket_types:        ticketTypes,
+    });
+  }
+
+  // Sort by created_at descending (groups are unsorted after Map iteration)
+  result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  return result;
+}
+
+/**
  * GET /api/v1/organizer/transactions
- * Returns all successful transactions for the logged-in organizer's events
+ * Returns all successful transactions for the logged-in organizer's events,
+ * grouped by reference (one object per purchase).
  */
 router.get('/transactions', verifyToken, async (req, res) => {
   try {
     const organizerId = req.user.id;
 
     if (!organizerId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
-        message: 'You must be logged in'
-      });
+      return res.status(401).json({ success: false, error: 'Unauthorized', message: 'You must be logged in' });
     }
 
     const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
+    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-    // Fetch transactions directly by organizer_id
+    // Fetch all rows (primary + per-type rows TXN_XXX_1 etc.)
     const { data: transactions, error: txError } = await supabase
       .from('transactions')
-      .select('id, reference, buyer_name, buyer_email, ticket_price, processing_fee, total_amount, platform_commission, organizer_earnings, status, created_at, event_id, organizer_id, squadco_response')
+      .select('id, reference, buyer_name, buyer_email, ticket_price, processing_fee, total_amount, platform_commission, organizer_earnings, quantity, status, created_at, event_id, squadco_response')
       .eq('organizer_id', organizerId)
       .eq('status', 'success')
       .order('created_at', { ascending: false });
 
     if (txError) {
       console.error('❌ Error fetching transactions:', txError);
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to fetch transactions',
-        message: txError.message
-      });
+      return res.status(500).json({ success: false, error: 'Failed to fetch transactions', message: txError.message });
     }
 
-    // Then fetch event titles separately
+    // Fetch event titles
     const eventIds = [...new Set((transactions || []).map(t => t.event_id).filter(Boolean))];
     let eventMap = {};
-
     if (eventIds.length > 0) {
-      const { data: events } = await supabase
-        .from('events')
-        .select('id, title')
-        .in('id', eventIds);
-
+      const { data: events } = await supabase.from('events').select('id, title').in('id', eventIds);
       eventMap = Object.fromEntries((events || []).map(e => [e.id, e.title]));
     }
 
-    // Enrich transactions with event titles
-    const enrichedTransactions = (transactions || []).map(t => {
-      const sr = typeof t.squadco_response === 'string'
-        ? (() => { try { return JSON.parse(t.squadco_response); } catch(_) { return {}; } })()
-        : (t.squadco_response || {});
-      const attendees = sr.attendees || [];
-      const buyerPhone = attendees.length > 0 ? (attendees[0]?.phone || attendees[0]?.phoneNumber || null) : null;
+    const grouped = groupTransactionsByReference(transactions || [], eventMap);
 
-      // ✅ Use per-row quantity column (set during per-type split), NOT full cart sum
-      const quantity = t.quantity || 1;
-
-      // tier_id / tier_name are stored in squadco_response by the verify controller
-      const tierName = sr.tier_name || null;
-      const tierId   = sr.tier_id   || null;
-
-      return {
-        id: t.id,
-        event_id: t.event_id,
-        event_title: eventMap[t.event_id] || 'Unknown Event',
-        buyer_name: t.buyer_name,
-        buyer_email: t.buyer_email,
-        buyer_phone: buyerPhone,
-        ticket_price: Number(t.ticket_price || 0),
-        total_amount: Number(t.total_amount || 0),
-        platform_commission: Number(t.platform_commission || 0),
-        organizer_earnings: Number(t.organizer_earnings || 0),
-        quantity,
-        ticket_type_id: tierId,        // string tier ID from squadco_response
-        ticket_type_name: tierName,    // tier name e.g. "VIP", "Regular"
-        squadco_response: t.squadco_response, // full JSONB for frontend to read
-        reference: t.reference,
-        status: t.status,
-        created_at: t.created_at
-      };
-    });
-
-    return res.status(200).json({
-      success: true,
-      data: enrichedTransactions
-    });
+    return res.status(200).json({ success: true, data: grouped });
   } catch (err) {
     console.error('❌ Transactions error:', err);
-    return res.status(500).json({
-      success: false,
-      error: 'Server error',
-      message: 'Internal server error'
-    });
+    return res.status(500).json({ success: false, error: 'Server error', message: 'Internal server error' });
   }
 });
 
 /**
  * GET /api/v1/organizer/events/:eventId/transactions
- * Returns all successful transactions for a specific event owned by the organizer
+ * Returns all successful transactions for a specific event, grouped by reference.
  */
 router.get('/events/:eventId/transactions', verifyToken, async (req, res) => {
   try {
@@ -294,11 +318,7 @@ router.get('/events/:eventId/transactions', verifyToken, async (req, res) => {
     const organizerId = req.user.id;
 
     if (!organizerId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
-        message: 'You must be logged in'
-      });
+      return res.status(401).json({ success: false, error: 'Unauthorized', message: 'You must be logged in' });
     }
 
     const { createClient } = await import('@supabase/supabase-js');
@@ -307,102 +327,40 @@ router.get('/events/:eventId/transactions', verifyToken, async (req, res) => {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    // Verify the event exists and belongs to this organizer
+    // Verify event ownership
     const { data: event, error: eventError } = await supabase
       .from('events')
-      .select('id, organizer_id')
+      .select('id, organizer_id, title')
       .eq('id', eventId)
       .single();
 
     if (eventError || !event) {
-      return res.status(404).json({
-        success: false,
-        error: 'Event not found',
-        message: 'Event not found'
-      });
+      return res.status(404).json({ success: false, error: 'Event not found', message: 'Event not found' });
     }
-
     if (event.organizer_id !== organizerId) {
-      return res.status(403).json({
-        success: false,
-        error: 'Forbidden',
-        message: 'This event does not belong to you'
-      });
+      return res.status(403).json({ success: false, error: 'Forbidden', message: 'This event does not belong to you' });
     }
 
-    // Fetch all successful transactions for this event
+    // Fetch all rows for this event (primary + per-type rows)
     const { data: transactions, error: txError } = await supabase
       .from('transactions')
-      .select('id, reference, buyer_name, buyer_email, ticket_price, total_amount, platform_commission, organizer_earnings, quantity, status, created_at, squadco_response')
+      .select('id, reference, buyer_name, buyer_email, ticket_price, total_amount, platform_commission, organizer_earnings, quantity, status, created_at, event_id, squadco_response')
       .eq('event_id', eventId)
       .eq('status', 'success')
       .order('created_at', { ascending: false });
 
     if (txError) {
       console.error('❌ Error fetching event transactions:', txError);
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to fetch transactions',
-        message: txError.message
-      });
+      return res.status(500).json({ success: false, error: 'Failed to fetch transactions', message: txError.message });
     }
 
-    // Shape the response - extract tier info from squadco_response
-    const shaped = (transactions || []).map(t => {
-      const sr = typeof t.squadco_response === 'string'
-        ? (() => { try { return JSON.parse(t.squadco_response); } catch(_) { return {}; } })()
-        : (t.squadco_response || {});
-      const attendees = sr.attendees || [];
-      const buyerPhone = attendees.length > 0 ? (attendees[0]?.phone || attendees[0]?.phoneNumber || null) : null;
+    const eventTitleMap = { [eventId]: event.title };
+    const grouped = groupTransactionsByReference(transactions || [], eventTitleMap);
 
-      // ✅ Use per-row quantity column (set during per-type split), NOT full cart sum
-      const quantity = t.quantity || 1;
-
-      // tier_id / tier_name are stored in squadco_response by the verify controller
-      const tierName = sr.tier_name || null;
-      const tierId   = sr.tier_id   || null;
-
-      return {
-        id: t.id,
-        event_id: eventId,
-        buyer_name: t.buyer_name,
-        buyer_email: t.buyer_email,
-        buyer_phone: buyerPhone,
-        ticket_price: Number(t.ticket_price || 0),
-        total_amount: Number(t.total_amount || 0),
-        platform_commission: Number(t.platform_commission || 0),
-        organizer_earnings: Number(t.organizer_earnings || 0),
-        quantity,
-        ticket_type_id: tierId,        // string tier ID from squadco_response
-        ticket_type_name: tierName,    // tier name e.g. "VIP", "Regular"
-        squadco_response: t.squadco_response, // full JSONB for frontend to read
-        reference: t.reference,
-        status: t.status,
-        created_at: t.created_at
-      };
-    });
-
-    // Diagnostic log — remove after confirming frontend receives tier data
-    if (shaped.length > 0) {
-      console.log('[SHAPE] row0:', JSON.stringify({
-        reference: shaped[0].reference,
-        ticket_type_id: shaped[0].ticket_type_id,
-        ticket_type_name: shaped[0].ticket_type_name,
-        has_squadco_response: !!shaped[0].squadco_response,
-      }));
-    }
-
-    return res.status(200).json({
-      success: true,
-      data: shaped
-    });
+    return res.status(200).json({ success: true, data: grouped });
   } catch (err) {
     console.error('❌ Event transactions error:', err);
-    return res.status(500).json({
-      success: false,
-      error: 'Server error',
-      message: 'Internal server error'
-    });
+    return res.status(500).json({ success: false, error: 'Server error', message: 'Internal server error' });
   }
 });
 
