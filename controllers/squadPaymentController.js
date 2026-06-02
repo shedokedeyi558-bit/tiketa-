@@ -599,26 +599,22 @@ export const verifyPaymentController = async (req, res) => {
     }
 
     // ─── Idempotency guard ────────────────────────────────────────────────────
-    // If per-type rows were already written (e.g. frontend retried verify),
-    // skip re-insertion and tickets_sold increment to avoid duplicates.
-    //
-    // Detection rules:
-    // • Multi-item cart: existingCount > 1 (extra rows TXN_XXX_1, TXN_XXX_2 etc.)
-    // • Single-item cart: check if the original row already has `quantity` set
-    //   (quantity is NULL until the per-type update runs)
+    // The split is complete when existingCount >= cartItems.length.
+    // First call:  existingCount=1, cartItems.length=2 → 1 >= 2 = false → proceeds ✅
+    // Second call: existingCount=2, cartItems.length=2 → 2 >= 2 = true  → skips ✅
+    // Single item: existingCount=1, cartItems.length=1 → 1 >= 1 = true on retry ✅
     const { data: existingPerTypeRows } = await supabase
       .from('transactions')
-      .select('id, ticket_type_id, quantity')
+      .select('id, quantity')
       .ilike('reference', `${transaction.reference}%`)
       .eq('status', 'success');
 
     const existingCount = Array.isArray(existingPerTypeRows) ? existingPerTypeRows.length : 0;
-    const originalRow = existingPerTypeRows?.find(r => r.id === transaction.id);
-    // alreadyExpanded = multiple rows written (multi-item cart idempotency)
-    //                OR original row already has quantity set (single-item cart idempotency)
-    const alreadyExpanded = existingCount > 1 || (originalRow?.quantity != null && originalRow?.quantity > 0);
+    const alreadyExpanded = cartItems.length > 0
+      ? existingCount >= cartItems.length
+      : existingCount > 1;
 
-    console.log(`[PER-TYPE] idempotency check: existingCount=${existingCount}, originalRow.quantity=${originalRow?.quantity}, cartItems.length=${cartItems.length}, alreadyExpanded=${alreadyExpanded}`);
+    console.log(`[PER-TYPE] idempotency check: existingCount=${existingCount}, cartItems.length=${cartItems.length}, alreadyExpanded=${alreadyExpanded}`);
 
     // ─── Per-ticket-type transaction rows ─────────────────────────────────────
     // Strategy: one DB row per cart item (ticket type).
