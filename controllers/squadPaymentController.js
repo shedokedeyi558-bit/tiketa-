@@ -510,14 +510,18 @@ export const verifyPaymentController = async (req, res) => {
     
     let updateError;
     try {
+      // ✅ CRITICAL: Preserve the original cartItems/attendees from initiation.
+      // Do NOT spread result.rawData into squadco_response — Squad's response
+      // object can overwrite cartItems if it has conflicting keys.
+      // Store Squad's raw data under a separate key instead.
       const { error: dbUpdateError } = await Promise.race([
         supabase
           .from('transactions')
           .update({
             status: 'success',
-            squadco_response: { 
-              ...transaction.squadco_response, // Preserve original cartItems and attendees
-              ...result.rawData // Add Squad verification data
+            squadco_response: {
+              ...transaction.squadco_response, // cartItems, attendees preserved
+              squad_verification: result.rawData, // Squad data stored separately
             },
             verified_at: new Date().toISOString(),
           })

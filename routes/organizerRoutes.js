@@ -239,15 +239,13 @@ router.get('/transactions', verifyToken, async (req, res) => {
       const sr = typeof t.squadco_response === 'string'
         ? (() => { try { return JSON.parse(t.squadco_response); } catch(_) { return {}; } })()
         : (t.squadco_response || {});
-      const cartItems = sr.cartItems || [];
       const attendees = sr.attendees || [];
-      const quantity = cartItems.length > 0
-        ? cartItems.reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0)
-        : (t.quantity || 1);
       const buyerPhone = attendees.length > 0 ? (attendees[0]?.phone || attendees[0]?.phoneNumber || null) : null;
 
+      // ✅ Use per-row quantity column (set during per-type split), NOT full cart sum
+      const quantity = t.quantity || 1;
+
       // tier_id / tier_name are stored in squadco_response by the verify controller
-      // (ticket_type_id column is UUID type and cannot store the string IDs the frontend sends)
       const tierName = sr.tier_name || null;
       const tierId   = sr.tier_id   || null;
 
@@ -354,15 +352,13 @@ router.get('/events/:eventId/transactions', verifyToken, async (req, res) => {
       const sr = typeof t.squadco_response === 'string'
         ? (() => { try { return JSON.parse(t.squadco_response); } catch(_) { return {}; } })()
         : (t.squadco_response || {});
-      const cartItems = sr.cartItems || [];
       const attendees = sr.attendees || [];
-      const quantity = cartItems.length > 0
-        ? cartItems.reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0)
-        : (t.quantity || 1);
       const buyerPhone = attendees.length > 0 ? (attendees[0]?.phone || attendees[0]?.phoneNumber || null) : null;
 
+      // ✅ Use per-row quantity column (set during per-type split), NOT full cart sum
+      const quantity = t.quantity || 1;
+
       // tier_id / tier_name are stored in squadco_response by the verify controller
-      // (ticket_type_id column is UUID type and cannot store the string IDs the frontend sends)
       const tierName = sr.tier_name || null;
       const tierId   = sr.tier_id   || null;
 
