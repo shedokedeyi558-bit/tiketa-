@@ -1493,7 +1493,7 @@ export const getAdminOrganizerById = async (req, res) => {
 
     const { data: transactions } = await supabase
       .from('transactions')
-      .select('id, event_id, ticket_price, total_amount, organizer_earnings, created_at, status')
+      .select('id, event_id, buyer_name, buyer_email, reference, ticket_price, total_amount, organizer_earnings, created_at, status, events(title)')
       .eq('organizer_id', id)
       .eq('status', 'success');
 
@@ -1512,10 +1512,11 @@ export const getAdminOrganizerById = async (req, res) => {
     const totalEarnings = (transactions || []).reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0);
     const ticketsSold = (transactions || []).length;
 
-    // Map transactions to include 'amount' field for frontend compatibility
     const mappedTransactions = (transactions || []).map(t => ({
       ...t,
-      amount: t.total_amount, // Map total_amount to amount for frontend
+      amount: t.total_amount,          // alias for frontend compatibility
+      event_title: t.events?.title || null, // from nested join
+      events: undefined,               // strip the nested object — don't expose it raw
     }));
 
     // Extract wallet data
