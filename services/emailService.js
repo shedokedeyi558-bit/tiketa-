@@ -397,6 +397,26 @@ export const sendTicketPurchaseConfirmation = async ({ buyerName, buyerEmail, re
 
             ${attendeeList}
 
+            <!-- QR Code -->
+            <div style="text-align:center; margin: 24px 0;">
+              <p style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px;">Scan at entrance</p>
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${reference}&bgcolor=ffffff&color=1a0a2e&margin=10"
+                alt="Entry QR Code"
+                width="220"
+                height="220"
+                style="border-radius:12px; border:4px solid #6c47ff;"
+              />
+              <p style="font-family:monospace; font-size:11px; color:#6c47ff; margin-top:10px;">${reference}</p>
+            </div>
+
+            <!-- View Ticket Button -->
+            <div style="text-align:center; margin: 20px 0;">
+              <a href="https://ticketa-topaz.vercel.app/confirm?ref=${reference}"
+                style="display:inline-block; background:#6c47ff; color:#ffffff; padding:14px 32px; border-radius:12px; font-weight:700; font-size:14px; text-decoration:none;">
+                View Your Ticket
+              </a>
+            </div>
+
             <!-- Reference -->
             <div style="background:#f9f9f9;border:1px solid #eee;border-radius:6px;padding:14px 18px;margin:24px 0;">
               <p style="margin:0;font-size:13px;color:#888;">Transaction Reference</p>

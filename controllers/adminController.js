@@ -2247,3 +2247,75 @@ export const fixWalletIntegrity = async (req, res) => {
     return res.status(500).json({ success: false, error: err.message });
   }
 };
+
+// ✅ POST /api/v1/admin/transactions/:reference/resend-email
+// Rebuilds and resends the Ticketa confirmation email to the buyer.
+// Auth: admin JWT required.
+export const resendTransactionEmail = async (req, res) => {
+  try {
+    const { reference } = req.params;
+
+    if (!reference) {
+      return res.status(400).json({ success: false, error: 'Reference is required' });
+    }
+
+    // Fetch the primary transaction row (strip any _N suffix to get the base row)
+    const baseReference = reference.replace(/_\d+$/, '');
+
+    const { data: transaction, error: txErr } = await supabaseAdmin
+      .from('transactions')
+      .select('id, reference, buyer_name, buyer_email, total_amount, event_id, squadco_response, status')
+      .eq('reference', baseReference)
+      .maybeSingle();
+
+    if (txErr || !transaction) {
+      return res.status(404).json({ success: false, error: 'Transaction not found' });
+    }
+
+    if (transaction.status !== 'success') {
+      return res.status(400).json({ success: false, error: `Transaction status is '${transaction.status}', not success` });
+    }
+
+    // Fetch event details
+    const { data: event } = await supabaseAdmin
+      .from('events')
+      .select('id, title, date, start_time, end_time, location')
+      .eq('id', transaction.event_id)
+      .single();
+
+    // Parse squadco_response for cartItems and attendees
+    const sr = typeof transaction.squadco_response === 'string'
+      ? (() => { try { return JSON.parse(transaction.squadco_response); } catch(_) { return {}; } })()
+      : (transaction.squadco_response || {});
+
+    const cartItems = Array.isArray(sr.cartItems) ? sr.cartItems : [];
+    const attendees = Array.isArray(sr.attendees) ? sr.attendees : [];
+
+    // Send the email
+    const { sendTicketPurchaseConfirmation } = await import('../services/emailService.js');
+    const result = await sendTicketPurchaseConfirmation({
+      buyerName:   transaction.buyer_name,
+      buyerEmail:  transaction.buyer_email,
+      reference:   transaction.reference,
+      event,
+      cartItems,
+      attendees,
+      totalAmount: transaction.total_amount,
+    });
+
+    if (!result.success) {
+      return res.status(500).json({ success: false, error: result.error });
+    }
+
+    console.log(`[RESEND] Confirmation email resent for ${reference} to ${transaction.buyer_email}`);
+
+    return res.status(200).json({
+      success: true,
+      sent_to: transaction.buyer_email,
+      message_id: result.messageId,
+    });
+  } catch (err) {
+    console.error('❌ resendTransactionEmail error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};

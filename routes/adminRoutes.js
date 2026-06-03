@@ -25,6 +25,7 @@ import {
   getAdminTransactions,
   getWalletIntegrity,
   fixWalletIntegrity,
+  resendTransactionEmail,
 } from '../controllers/adminController.js';
 import {
   getWithdrawalsController,
@@ -91,6 +92,9 @@ router.get('/transactions', getAdminTransactions);
 // Wallet integrity check and fix
 router.get('/wallet-integrity', getWalletIntegrity);
 router.post('/wallet-integrity/fix', fixWalletIntegrity);
+
+// Resend confirmation email to buyer
+router.post('/transactions/:reference/resend-email', resendTransactionEmail);
 
 // Payout management
 router.get('/payouts/withdrawals', getWithdrawalsController);
