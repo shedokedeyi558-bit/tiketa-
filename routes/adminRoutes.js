@@ -23,6 +23,8 @@ import {
   backfillTransactions,
   getStuckPayments,
   getAdminTransactions,
+  getWalletIntegrity,
+  fixWalletIntegrity,
 } from '../controllers/adminController.js';
 import {
   getWithdrawalsController,
@@ -85,6 +87,10 @@ router.get('/stuck-payments', getStuckPayments);
 
 // Transaction ledger with filters, search, pagination
 router.get('/transactions', getAdminTransactions);
+
+// Wallet integrity check and fix
+router.get('/wallet-integrity', getWalletIntegrity);
+router.post('/wallet-integrity/fix', fixWalletIntegrity);
 
 // Payout management
 router.get('/payouts/withdrawals', getWithdrawalsController);

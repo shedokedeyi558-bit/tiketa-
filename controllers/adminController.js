@@ -2100,3 +2100,150 @@ export const getAdminTransactions = async (req, res) => {
     return res.status(500).json({ success: false, error: err.message });
   }
 };
+
+// ✅ GET /api/v1/admin/wallet-integrity
+// Checks for wallets where available_balance > sum of organizer_earnings from transactions.
+// Returns all organizers with a discrepancy so the issue can be diagnosed.
+export const getWalletIntegrity = async (req, res) => {
+  try {
+    // Fetch all wallets
+    const { data: wallets, error: walletErr } = await supabaseAdmin
+      .from('wallets')
+      .select('organizer_id, available_balance, pending_balance, total_earned');
+
+    if (walletErr) return res.status(500).json({ success: false, error: walletErr.message });
+
+    // Fetch sum of organizer_earnings per organizer from transactions
+    const { data: txSums, error: txErr } = await supabaseAdmin
+      .from('transactions')
+      .select('organizer_id, organizer_earnings')
+      .eq('status', 'success');
+
+    if (txErr) return res.status(500).json({ success: false, error: txErr.message });
+
+    // Build map: organizer_id → sum of organizer_earnings
+    const earningsMap = {};
+    for (const tx of (txSums || [])) {
+      earningsMap[tx.organizer_id] = (earningsMap[tx.organizer_id] || 0) + Number(tx.organizer_earnings || 0);
+    }
+
+    // Fetch organizer names
+    const orgIds = (wallets || []).map(w => w.organizer_id).filter(Boolean);
+    let nameMap = {};
+    if (orgIds.length > 0) {
+      const { data: profiles } = await supabaseAdmin
+        .from('profiles')
+        .select('id, full_name, email')
+        .in('id', orgIds);
+      nameMap = Object.fromEntries((profiles || []).map(p => [p.id, p.full_name || p.email]));
+    }
+
+    const now = Date.now();
+    const allRows = (wallets || []).map(w => {
+      const calculatedEarnings = Number((earningsMap[w.organizer_id] || 0).toFixed(2));
+      const availableBalance   = Number(w.available_balance || 0);
+      const discrepancy        = Number((availableBalance - calculatedEarnings).toFixed(2));
+
+      return {
+        organizer_id:         w.organizer_id,
+        organizer_name:       nameMap[w.organizer_id] || 'Unknown',
+        available_balance:    availableBalance,
+        pending_balance:      Number(w.pending_balance || 0),
+        wallet_total_earned:  Number(w.total_earned || 0),
+        calculated_earnings:  calculatedEarnings,
+        discrepancy,
+        has_discrepancy:      discrepancy > 0.01, // more than 1 kobo over
+      };
+    });
+
+    const discrepancies = allRows.filter(r => r.has_discrepancy);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        all_wallets:    allRows,
+        discrepancies,
+        discrepancy_count: discrepancies.length,
+      },
+    });
+  } catch (err) {
+    console.error('❌ getWalletIntegrity error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// ✅ POST /api/v1/admin/wallet-integrity/fix
+// Resets available_balance and total_earned on wallets to match sum of organizer_earnings
+// from successful transactions. Only touches wallets that have a discrepancy.
+// Does NOT touch pending_balance (manual/pending payouts are tracked separately).
+export const fixWalletIntegrity = async (req, res) => {
+  try {
+    const dryRun = req.query.dry_run === 'true'; // pass ?dry_run=true to preview without writing
+
+    // Fetch all wallets
+    const { data: wallets, error: walletErr } = await supabaseAdmin
+      .from('wallets')
+      .select('organizer_id, available_balance, total_earned');
+
+    if (walletErr) return res.status(500).json({ success: false, error: walletErr.message });
+
+    // Fetch sum of organizer_earnings per organizer
+    const { data: txSums, error: txErr } = await supabaseAdmin
+      .from('transactions')
+      .select('organizer_id, organizer_earnings')
+      .eq('status', 'success');
+
+    if (txErr) return res.status(500).json({ success: false, error: txErr.message });
+
+    const earningsMap = {};
+    for (const tx of (txSums || [])) {
+      earningsMap[tx.organizer_id] = (earningsMap[tx.organizer_id] || 0) + Number(tx.organizer_earnings || 0);
+    }
+
+    const fixes = [];
+    let fixedCount = 0;
+
+    for (const wallet of (wallets || [])) {
+      const correctBalance = Number((earningsMap[wallet.organizer_id] || 0).toFixed(2));
+      const currentBalance = Number(wallet.available_balance || 0);
+      const discrepancy    = Number((currentBalance - correctBalance).toFixed(2));
+
+      if (Math.abs(discrepancy) < 0.01) continue; // within 1 kobo — no fix needed
+
+      fixes.push({
+        organizer_id:      wallet.organizer_id,
+        old_balance:       currentBalance,
+        correct_balance:   correctBalance,
+        discrepancy,
+      });
+
+      if (!dryRun) {
+        const { error: updateErr } = await supabaseAdmin
+          .from('wallets')
+          .update({
+            available_balance: correctBalance,
+            total_earned:      correctBalance,
+          })
+          .eq('organizer_id', wallet.organizer_id);
+
+        if (updateErr) {
+          console.error(`[WALLET-FIX] Failed to fix wallet for ${wallet.organizer_id}:`, updateErr.message);
+        } else {
+          fixedCount++;
+          console.log(`[WALLET-FIX] Fixed organizer ${wallet.organizer_id}: ${currentBalance} → ${correctBalance}`);
+        }
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      dry_run: dryRun,
+      fixes_needed: fixes.length,
+      fixes_applied: dryRun ? 0 : fixedCount,
+      fixes,
+    });
+  } catch (err) {
+    console.error('❌ fixWalletIntegrity error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
