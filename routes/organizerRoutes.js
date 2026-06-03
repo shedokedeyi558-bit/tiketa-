@@ -187,6 +187,32 @@ router.delete('/events/:id', verifyToken, async (req, res) => {
  * Per-type rows have references like TXN_XXX_1, TXN_XXX_2.
  * The primary row is TXN_XXX (no suffix).
  * Groups them into one purchase object with a ticket_types array.
+ *
+ * ⚠️  PRODUCTION CONTRACT — DO NOT CHANGE SHAPE WITHOUT FRONTEND SIGN-OFF
+ *
+ *  Applies to both:
+ *    GET /api/v1/organizer/transactions
+ *    GET /api/v1/organizer/events/:eventId/transactions
+ *
+ *  Required fields (frontend reads these directly):
+ *    [].reference
+ *    [].buyer_name
+ *    [].buyer_email
+ *    [].buyer_phone
+ *    [].total_amount
+ *    [].organizer_earnings
+ *    [].platform_commission
+ *    [].quantity
+ *    [].status
+ *    [].created_at
+ *    [].event_title
+ *    [].attendees
+ *    [].ticket_types[].ticket_type_id
+ *    [].ticket_types[].ticket_type_name
+ *    [].ticket_types[].quantity
+ *    [].ticket_types[].ticket_price
+ *    [].ticket_types[].organizer_earnings
+ *    [].ticket_types[].platform_commission
  */
 function groupTransactionsByReference(rows, eventTitleMap = {}) {
   // Map: baseRef → { primary row, all rows }

@@ -868,6 +868,26 @@ export const verifyPaymentController = async (req, res) => {
     const eventInfo = eventTitleResult.data;
 
     return res.status(200).json({
+      // ─────────────────────────────────────────────────────────────────────────
+      // ⚠️  PRODUCTION CONTRACT — DO NOT CHANGE SHAPE WITHOUT FRONTEND SIGN-OFF
+      //
+      //  POST /api/v1/payments/squad/verify
+      //  Required fields (frontend reads these directly):
+      //    data.transaction.reference
+      //    data.transaction.buyer_name
+      //    data.transaction.buyer_email
+      //    data.transaction.total_amount
+      //    data.transaction.status
+      //    data.transaction.created_at
+      //    data.transaction.event_title
+      //    data.all_transactions[].ticket_type_name
+      //    data.all_transactions[].ticket_price
+      //    data.all_transactions[].quantity
+      //    data.all_transactions[].total_amount
+      //    data.event_title
+      //    data.event_date
+      //    data.event_location
+      // ─────────────────────────────────────────────────────────────────────────
       success: true,
       message: 'Payment verified successfully',
       data: {
@@ -893,7 +913,7 @@ export const verifyPaymentController = async (req, res) => {
           verified_at: new Date().toISOString(),
           event_title: eventInfo?.title || null,
         },
-        all_transactions: allRows, // ✅ All per-type rows for full breakdown
+        all_transactions: allRows,
         ticket: null,
       },
     });
