@@ -21,6 +21,7 @@ import {
   diagnosticEventTransactions,
   getMonthlyEarnings,
   backfillTransactions,
+  getStuckPayments,
 } from '../controllers/adminController.js';
 import {
   getWithdrawalsController,
@@ -77,6 +78,9 @@ router.get('/diagnostics/event/:eventId/transactions', diagnosticEventTransactio
 
 // Backfill: re-run per-type split for broken transactions + re-sync tickets_sold
 router.post('/backfill-transactions', backfillTransactions);
+
+// Stuck payments: pending transactions older than 30 minutes
+router.get('/stuck-payments', getStuckPayments);
 
 // Payout management
 router.get('/payouts/withdrawals', getWithdrawalsController);

@@ -1939,3 +1939,50 @@ export const backfillTransactions = async (req, res) => {
     return res.status(500).json({ success: false, error: error.message });
   }
 };
+
+// ✅ GET /api/v1/admin/stuck-payments
+// Returns pending transactions older than 30 minutes
+export const getStuckPayments = async (req, res) => {
+  try {
+    const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+
+    const { data: stuckTx, error } = await supabaseAdmin
+      .from('transactions')
+      .select('id, reference, buyer_name, buyer_email, total_amount, event_id, created_at')
+      .eq('status', 'pending')
+      .lt('created_at', cutoff)
+      .order('created_at', { ascending: true })
+      .limit(100);
+
+    if (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+
+    // Fetch event titles
+    const eventIds = [...new Set((stuckTx || []).map(t => t.event_id).filter(Boolean))];
+    let eventMap = {};
+    if (eventIds.length > 0) {
+      const { data: events } = await supabaseAdmin
+        .from('events')
+        .select('id, title')
+        .in('id', eventIds);
+      eventMap = Object.fromEntries((events || []).map(e => [e.id, e.title]));
+    }
+
+    const now = Date.now();
+    const shaped = (stuckTx || []).map(t => ({
+      id: t.id,
+      reference: t.reference,
+      buyer_name: t.buyer_name,
+      buyer_email: t.buyer_email,
+      event_title: eventMap[t.event_id] || 'Unknown Event',
+      total_amount: Number(t.total_amount || 0),
+      created_at: t.created_at,
+      minutes_ago: Math.floor((now - new Date(t.created_at).getTime()) / 60000),
+    }));
+
+    return res.status(200).json({ success: true, data: shaped, count: shaped.length });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
