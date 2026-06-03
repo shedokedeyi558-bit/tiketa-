@@ -22,6 +22,7 @@ import {
   getMonthlyEarnings,
   backfillTransactions,
   getStuckPayments,
+  getAdminTransactions,
 } from '../controllers/adminController.js';
 import {
   getWithdrawalsController,
@@ -81,6 +82,9 @@ router.post('/backfill-transactions', backfillTransactions);
 
 // Stuck payments: pending transactions older than 30 minutes
 router.get('/stuck-payments', getStuckPayments);
+
+// Transaction ledger with filters, search, pagination
+router.get('/transactions', getAdminTransactions);
 
 // Payout management
 router.get('/payouts/withdrawals', getWithdrawalsController);

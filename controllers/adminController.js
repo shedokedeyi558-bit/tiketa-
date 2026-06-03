@@ -1986,3 +1986,117 @@ export const getStuckPayments = async (req, res) => {
     return res.status(500).json({ success: false, error: err.message });
   }
 };
+
+// ✅ GET /api/v1/admin/transactions
+// Admin transaction ledger with filters, search, pagination, and summary
+export const getAdminTransactions = async (req, res) => {
+  try {
+    const statusFilter = req.query.status || null; // success | pending | failed | stuck
+    const search      = req.query.search?.trim() || null;
+    const page        = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit       = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
+    const offset      = (page - 1) * limit;
+
+    const stuckCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+
+    // ── Build the transactions query ────────────────────────────────────────
+    let query = supabaseAdmin
+      .from('transactions')
+      .select('id, reference, buyer_name, buyer_email, total_amount, platform_commission, organizer_id, event_id, status, created_at', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    // Status filter
+    if (statusFilter === 'stuck') {
+      query = query.eq('status', 'pending').lt('created_at', stuckCutoff);
+    } else if (statusFilter) {
+      query = query.eq('status', statusFilter);
+    }
+
+    // Search filter — ilike on buyer_email, buyer_name, reference
+    if (search) {
+      query = query.or(
+        `buyer_email.ilike.%${search}%,buyer_name.ilike.%${search}%,reference.ilike.%${search}%`
+      );
+    }
+
+    const { data: txRows, error: txErr, count: total } = await query;
+
+    if (txErr) {
+      return res.status(500).json({ success: false, error: txErr.message });
+    }
+
+    // ── Fetch event titles and organizer names in parallel ──────────────────
+    const eventIds     = [...new Set((txRows || []).map(t => t.event_id).filter(Boolean))];
+    const organizerIds = [...new Set((txRows || []).map(t => t.organizer_id).filter(Boolean))];
+
+    const [eventsResult, profilesResult] = await Promise.all([
+      eventIds.length > 0
+        ? supabaseAdmin.from('events').select('id, title').in('id', eventIds)
+        : Promise.resolve({ data: [] }),
+      organizerIds.length > 0
+        ? supabaseAdmin.from('profiles').select('id, full_name').in('id', organizerIds)
+        : Promise.resolve({ data: [] }),
+    ]);
+
+    const eventMap    = Object.fromEntries((eventsResult.data  || []).map(e => [e.id, e.title]));
+    const profileMap  = Object.fromEntries((profilesResult.data || []).map(p => [p.id, p.full_name]));
+
+    const now = Date.now();
+
+    const transactions = (txRows || []).map(t => {
+      const isPending = t.status === 'pending';
+      const minutesAgo = isPending
+        ? Math.floor((now - new Date(t.created_at).getTime()) / 60000)
+        : null;
+
+      return {
+        id:                  t.id,
+        reference:           t.reference,
+        buyer_name:          t.buyer_name,
+        buyer_email:         t.buyer_email,
+        event_title:         eventMap[t.event_id]    || 'Unknown Event',
+        organizer_name:      profileMap[t.organizer_id] || 'Unknown',
+        total_amount:        Number(t.total_amount || 0),
+        platform_commission: Number(t.platform_commission || 0),
+        status:              t.status,
+        created_at:          t.created_at,
+        minutes_ago:         minutesAgo,
+      };
+    });
+
+    // ── Summary counts — always across ALL transactions (not just current page) ─
+    const [successRes, pendingRes, failedRes, stuckRes, successRevRes, pendingRevRes] = await Promise.all([
+      supabaseAdmin.from('transactions').select('id', { count: 'exact', head: true }).eq('status', 'success'),
+      supabaseAdmin.from('transactions').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabaseAdmin.from('transactions').select('id', { count: 'exact', head: true }).eq('status', 'failed'),
+      supabaseAdmin.from('transactions').select('id', { count: 'exact', head: true }).eq('status', 'pending').lt('created_at', stuckCutoff),
+      supabaseAdmin.from('transactions').select('total_amount').eq('status', 'success'),
+      supabaseAdmin.from('transactions').select('total_amount').eq('status', 'pending'),
+    ]);
+
+    const revenueSuccess = (successRevRes.data || []).reduce((s, t) => s + Number(t.total_amount || 0), 0);
+    const revenuePending = (pendingRevRes.data || []).reduce((s, t) => s + Number(t.total_amount || 0), 0);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        transactions,
+        total:  total || 0,
+        page,
+        limit,
+        summary: {
+          total_success:   successRes.count  || 0,
+          total_pending:   pendingRes.count  || 0,
+          total_failed:    failedRes.count   || 0,
+          total_stuck:     stuckRes.count    || 0,
+          revenue_success: Number(revenueSuccess.toFixed(2)),
+          revenue_pending: Number(revenuePending.toFixed(2)),
+        },
+      },
+    });
+  } catch (err) {
+    console.error('❌ getAdminTransactions error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
