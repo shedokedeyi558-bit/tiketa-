@@ -1755,3 +1755,187 @@ export const getMonthlyEarnings = async (req, res) => {
     });
   }
 };
+
+// ✅ POST /api/v1/admin/backfill-transactions
+// Re-runs the per-type split for all success transactions where
+// squadco_response.cartItems exists but tier_id is missing (partial state).
+// Also re-syncs events.tickets_sold from transaction data.
+// Auth: admin JWT required.
+export const backfillTransactions = async (req, res) => {
+  try {
+    console.log('[BACKFILL] Starting transaction backfill...');
+
+    // 1. Find all primary success rows (no _N suffix) where cartItems survived
+    //    but tier_id was never written (partial split state).
+    const { data: candidates, error: fetchErr } = await supabaseAdmin
+      .from('transactions')
+      .select('id, reference, event_id, organizer_id, buyer_email, buyer_name, processing_fee, total_amount, ticket_price, platform_commission, organizer_earnings, squadco_response, quantity, ip_address, user_agent')
+      .eq('status', 'success')
+      .not('squadco_response', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (fetchErr) {
+      return res.status(500).json({ success: false, error: fetchErr.message });
+    }
+
+    // Filter: primary rows only (no _N suffix) whose squadco_response has cartItems
+    // but tier_id is missing (partial state).
+    const toFix = (candidates || []).filter(row => {
+      // Only process the primary row (TXN_XXX, not TXN_XXX_1)
+      if (/_\d+$/.test(row.reference)) return false;
+
+      const sr = typeof row.squadco_response === 'string'
+        ? (() => { try { return JSON.parse(row.squadco_response); } catch(_) { return {}; } })()
+        : (row.squadco_response || {});
+
+      const cartItems = Array.isArray(sr.cartItems) ? sr.cartItems : [];
+      const tierIdMissing = !sr.tier_id;
+      const hasMultipleItems = cartItems.length > 1;
+      // Need backfill if: tier_id is missing OR multiple items with only 1 row
+      return tierIdMissing || hasMultipleItems;
+    });
+
+    console.log(`[BACKFILL] Found ${toFix.length} transactions needing backfill`);
+
+    const results = { fixed: 0, skipped: 0, errors: 0 };
+
+    for (const tx of toFix) {
+      try {
+        const sr = typeof tx.squadco_response === 'string'
+          ? (() => { try { return JSON.parse(tx.squadco_response); } catch(_) { return {}; } })()
+          : (tx.squadco_response || {});
+
+        const cartItems = Array.isArray(sr.cartItems) ? sr.cartItems : [];
+        if (cartItems.length === 0) { results.skipped++; continue; }
+
+        // Check how many rows already exist for this reference
+        const { data: existingRows } = await supabaseAdmin
+          .from('transactions')
+          .select('id')
+          .ilike('reference', `${tx.reference}%`)
+          .eq('status', 'success');
+
+        const existingCount = existingRows?.length || 0;
+        if (existingCount >= cartItems.length) {
+          results.skipped++;
+          continue; // Already fully split
+        }
+
+        // Fetch event ticket_types for name resolution
+        const { data: evData } = await supabaseAdmin
+          .from('events')
+          .select('ticket_types')
+          .eq('id', tx.event_id)
+          .single();
+
+        const ticketTypeMap = {};
+        if (Array.isArray(evData?.ticket_types)) {
+          for (const tt of evData.ticket_types) {
+            if (tt.id) ticketTypeMap[tt.id] = tt.name || 'Ticket';
+          }
+        }
+
+        const verifiedAt = new Date().toISOString();
+
+        // Update row 0 with tier info from first cart item
+        const firstItem = cartItems[0];
+        const firstTypeId = firstItem.id || firstItem.ticket_type_id || null;
+        const firstTypeName = firstTypeId ? (ticketTypeMap[firstTypeId] || firstItem.name || null) : null;
+        const firstQty = parseInt(firstItem.quantity) || 1;
+        const firstPrice = parseFloat(firstItem.price || firstItem.ticket_price || 0) * firstQty;
+        const firstProcessingFee = cartItems.length === 1 ? (tx.processing_fee || 0) : 0;
+
+        await supabaseAdmin
+          .from('transactions')
+          .update({
+            squadco_response: { ...sr, tier_id: firstTypeId, tier_name: firstTypeName },
+            ticket_price: firstPrice,
+            processing_fee: firstProcessingFee,
+            total_amount: firstPrice + firstProcessingFee,
+            platform_commission: firstPrice * 0.03,
+            organizer_earnings: firstPrice * 0.97,
+            quantity: firstQty,
+          })
+          .eq('id', tx.id);
+
+        // Insert remaining rows
+        for (let i = 1; i < cartItems.length; i++) {
+          // Skip if this row was already inserted
+          if (i < existingCount) continue;
+
+          const item = cartItems[i];
+          const typeId = item.id || item.ticket_type_id || null;
+          const typeName = typeId ? (ticketTypeMap[typeId] || item.name || null) : null;
+          const itemQty = parseInt(item.quantity) || 1;
+          const itemPrice = parseFloat(item.price || item.ticket_price || 0) * itemQty;
+
+          const { error: insertErr } = await supabaseAdmin
+            .from('transactions')
+            .insert([{
+              reference: `${tx.reference}_${i}`,
+              event_id: tx.event_id,
+              organizer_id: tx.organizer_id,
+              buyer_email: tx.buyer_email,
+              buyer_name: tx.buyer_name,
+              squadco_response: { ...sr, tier_id: typeId, tier_name: typeName },
+              ticket_price: itemPrice,
+              processing_fee: 0,
+              total_amount: itemPrice,
+              platform_commission: itemPrice * 0.03,
+              squadco_fee: 0,
+              organizer_earnings: itemPrice * 0.97,
+              quantity: itemQty,
+              status: 'success',
+              verified_at: verifiedAt,
+              ip_address: tx.ip_address,
+              user_agent: tx.user_agent,
+            }]);
+
+          if (insertErr) {
+            console.error(`[BACKFILL] Insert error for ${tx.reference}_${i}:`, insertErr.message);
+          }
+        }
+
+        results.fixed++;
+        console.log(`[BACKFILL] Fixed: ${tx.reference}`);
+      } catch (rowErr) {
+        console.error(`[BACKFILL] Error processing ${tx.reference}:`, rowErr.message);
+        results.errors++;
+      }
+    }
+
+    // 2. Re-sync events.tickets_sold from transactions (dynamic count)
+    console.log('[BACKFILL] Re-syncing events.tickets_sold...');
+    const { data: allTx } = await supabaseAdmin
+      .from('transactions')
+      .select('event_id, quantity')
+      .eq('status', 'success');
+
+    const soldByEvent = {};
+    for (const t of (allTx || [])) {
+      soldByEvent[t.event_id] = (soldByEvent[t.event_id] || 0) + (parseInt(t.quantity) || 1);
+    }
+
+    let syncedEvents = 0;
+    for (const [eventId, count] of Object.entries(soldByEvent)) {
+      const { error: syncErr } = await supabaseAdmin
+        .from('events')
+        .update({ tickets_sold: count })
+        .eq('id', eventId);
+
+      if (!syncErr) syncedEvents++;
+    }
+
+    console.log(`[BACKFILL] Done. fixed=${results.fixed}, skipped=${results.skipped}, errors=${results.errors}, syncedEvents=${syncedEvents}`);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Backfill complete',
+      results: { ...results, synced_events: syncedEvents },
+    });
+  } catch (error) {
+    console.error('[BACKFILL] Fatal error:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};

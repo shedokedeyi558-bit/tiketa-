@@ -20,6 +20,7 @@ import {
   unsuspendOrganizer,
   diagnosticEventTransactions,
   getMonthlyEarnings,
+  backfillTransactions,
 } from '../controllers/adminController.js';
 import {
   getWithdrawalsController,
@@ -73,6 +74,9 @@ router.get('/monthly-earnings', getMonthlyEarnings);
 // Transaction diagnostics (for debugging)
 router.get('/diagnostics/transactions', getTransactionDiagnostics);
 router.get('/diagnostics/event/:eventId/transactions', diagnosticEventTransactions);
+
+// Backfill: re-run per-type split for broken transactions + re-sync tickets_sold
+router.post('/backfill-transactions', backfillTransactions);
 
 // Payout management
 router.get('/payouts/withdrawals', getWithdrawalsController);
