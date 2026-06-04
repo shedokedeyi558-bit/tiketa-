@@ -177,23 +177,23 @@ export const getAllEvents = async (req, res) => {
       return res.json(cached.data);
     }
 
-    // ✅ Build query - always filter by active status AND future dates by default
+    // ✅ Build query — status = 'active' is the only gate needed.
+    // updateExpiredEvents() already set status = 'ended' at the correct end_date + end_time,
+    // so no date math is needed here. All active events are visible regardless of start date.
     let query = supabase
       .from('events')
-      .select('*')
+      .select('id, title, description, image_url, date, start_time, end_time, end_date, location, category, status, organizer_id, ticket_types, total_tickets, tickets_sold, ticket_price, created_at, updated_at')
       .eq('status', 'active');
 
-    // ✅ Apply date filter - default to upcoming (future dates only)
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-    if (dateFilter === 'upcoming') {
-      query = query.gte('date', today); // ✅ Only future events
-    } else if (dateFilter === 'past') {
+    // dateFilter=past is kept for browsability but no longer hides active events prematurely
+    if (dateFilter === 'past') {
+      const today = new Date().toISOString().split('T')[0];
       query = query.lt('date', today);
     }
-    // If dateFilter === 'all', no date filter applied
+    // dateFilter=upcoming and dateFilter=all: show all active events (expiry service is gatekeeper)
 
-    // ✅ Apply sorting
-    query = query.order(sortBy, { ascending: sortOrder });
+    // ✅ Apply sorting and limit
+    query = query.order(sortBy, { ascending: sortOrder }).limit(50);
 
     const { data, error } = await query;
 
