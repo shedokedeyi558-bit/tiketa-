@@ -546,61 +546,43 @@ export const verifyPaymentController = async (req, res) => {
       amount: result.amount,
     });
 
-    // 🔑 CRITICAL: Update transaction to success with separate error handling
-    console.log('📝 Updating transaction status to success...');
-    
-    // Create timeout promise for update
-    const updateTimeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Supabase transaction update timed out after 5 seconds')), 5000)
-    );
-    
-    let updateError;
-    try {
-      // ✅ CRITICAL: Preserve the original cartItems/attendees from initiation.
-      // Do NOT spread result.rawData into squadco_response — Squad's response
-      // object can overwrite cartItems if it has conflicting keys.
-      // Store Squad's raw data under a separate key instead.
-      const { error: dbUpdateError } = await Promise.race([
-        supabase
-          .from('transactions')
-          .update({
-            status: 'success',
-            squadco_response: {
-              ...transaction.squadco_response, // cartItems, attendees preserved
-              squad_verification: result.rawData, // Squad data stored separately
-            },
-            verified_at: new Date().toISOString(),
-          })
-          .eq('id', transaction.id),
-        updateTimeoutPromise
+    // ✅ ATOMIC CHECK-AND-UPDATE: Only the first concurrent call wins.
+    // Using .eq('status', 'pending') means Supabase only updates if still pending.
+    // If another call (webhook or retry) already set status=success, this returns no rows
+    // and we exit cleanly — no double processing.
+    console.log('📝 Atomically claiming transaction (pending → success)...');
+    const { data: claimedRow, error: claimError } = await supabase
+      .from('transactions')
+      .update({
+        status: 'success',
+        squadco_response: {
+          ...transaction.squadco_response, // cartItems, attendees preserved
+          squad_verification: result.rawData,
+        },
+        verified_at: new Date().toISOString(),
+      })
+      .eq('id', transaction.id)
+      .eq('status', 'pending') // ← atomic gate: only updates if still pending
+      .select('id')
+      .single();
+
+    if (claimError || !claimedRow) {
+      // Another call (webhook or concurrent verify) already processed this
+      console.log('[RACE] Transaction already claimed by another call — returning success response without re-processing');
+      // Still return a valid success response using the in-memory transaction data
+      const [allRowsResult, eventInfoResult] = await Promise.all([
+        supabase.from('transactions').select('id, reference, buyer_email, buyer_name, total_amount, ticket_price, processing_fee, platform_commission, organizer_earnings, quantity, status, created_at, verified_at, squadco_response').ilike('reference', `${transaction.reference}%`).eq('status', 'success').order('created_at', { ascending: true }),
+        supabase.from('events').select('id, title, date, location').eq('id', transaction.event_id).single(),
       ]);
-      
-      updateError = dbUpdateError;
-      
-      if (updateError) {
-        console.error('❌ Database update error:', updateError);
-      } else {
-        console.log('✅ Transaction updated to success in DB');
-      }
-    } catch (dbError) {
-      console.error('❌ Database operation failed:', {
-        message: dbError.message,
-        stack: dbError.stack,
-        timestamp: new Date().toISOString(),
+      const eventInfo = eventInfoResult.data;
+      const allRows = (allRowsResult.data || []).map(row => {
+        const sr = typeof row.squadco_response === 'string' ? (() => { try { return JSON.parse(row.squadco_response); } catch(_) { return {}; } })() : (row.squadco_response || {});
+        return { id: row.id, reference: row.reference, buyer_email: row.buyer_email, buyer_name: row.buyer_name, total_amount: Number(row.total_amount || 0), ticket_price: Number(row.ticket_price || 0), processing_fee: Number(row.processing_fee || 0), platform_commission: Number(row.platform_commission || 0), organizer_earnings: Number(row.organizer_earnings || 0), quantity: row.quantity || 1, ticket_type_id: sr.tier_id || null, ticket_type_name: sr.tier_name || null, status: row.status, created_at: row.created_at, verified_at: row.verified_at };
       });
-      updateError = dbError;
+      return res.status(200).json({ success: true, message: 'Payment verified successfully', data: { status: 'success', reference: transaction.reference, amount: transaction.total_amount, email: transaction.buyer_email, event_title: eventInfo?.title || null, event_date: eventInfo?.date || null, event_location: eventInfo?.location || null, transaction: { id: transaction.id, reference: transaction.reference, buyer_email: transaction.buyer_email, buyer_name: transaction.buyer_name, total_amount: transaction.total_amount, ticket_price: transaction.ticket_price, processing_fee: transaction.processing_fee, platform_commission: transaction.platform_commission, organizer_earnings: transaction.organizer_earnings, status: 'success', created_at: transaction.created_at, verified_at: new Date().toISOString(), event_title: eventInfo?.title || null }, all_transactions: allRows, ticket: null } });
     }
 
-    if (updateError) {
-      console.error('❌ Failed to update transaction status:', updateError);
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to update transaction status',
-        message: updateError.message,
-      });
-    }
-
-    console.log('✅ Transaction updated to success');
+    console.log('✅ [RACE WON] This call claimed the transaction — proceeding with full processing');
 
     // ─── Extract cartItems / attendees from the stored squadco_response ──────────
     // The initiation controller stored { cartItems, attendees, amount, buyerEmail }
@@ -1064,8 +1046,8 @@ export const callbackHandler = async (req, res) => {
 
       console.log('[WEBHOOK] Marking transaction as success:', transaction.id);
 
-      // Mark the primary row as success
-      const { error: updateErr } = await supabase
+      // ✅ ATOMIC CHECK-AND-UPDATE: Only the first concurrent call wins.
+      const { data: claimedRow, error: claimErr } = await supabase
         .from('transactions')
         .update({
           status: 'success',
@@ -1075,14 +1057,17 @@ export const callbackHandler = async (req, res) => {
           },
           verified_at: new Date().toISOString(),
         })
-        .eq('id', transaction.id);
+        .eq('id', transaction.id)
+        .eq('status', 'pending') // ← atomic gate
+        .select('id')
+        .single();
 
-      if (updateErr) {
-        console.error('[WEBHOOK] Failed to mark success:', updateErr.message);
+      if (claimErr || !claimedRow) {
+        console.log('[WEBHOOK] [RACE] Transaction already claimed — skipping processing');
         return;
       }
 
-      console.log('[WEBHOOK] ✅ Transaction marked success');
+      console.log('[WEBHOOK] ✅ [RACE WON] Claimed transaction — proceeding with full processing');
 
       // ── Parse cartItems / attendees ──────────────────────────────────────
       let rawResponse = transaction.squadco_response || {};
