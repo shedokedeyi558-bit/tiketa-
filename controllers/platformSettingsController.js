@@ -36,7 +36,7 @@ export const getPlatformSettings = async (req, res) => {
             platform_name: 'Ticketa',
             support_email: 'support@ticketa.com',
             platform_fee: 3,
-            minimum_withdrawal: 10000,
+            minimum_withdrawal: 5000,
             updated_at: new Date().toISOString(),
           },
         });
@@ -58,7 +58,7 @@ export const getPlatformSettings = async (req, res) => {
           platform_name: 'Ticketa',
           support_email: 'support@ticketa.com',
           platform_fee: 3,
-          minimum_withdrawal: 10000,
+          minimum_withdrawal: 5000,
           updated_at: new Date().toISOString(),
         },
       });
