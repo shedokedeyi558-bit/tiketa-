@@ -45,38 +45,10 @@ export const getAdminEvents = async (req, res) => {
     }
     console.log(`✅ Fetched organizer info for ${Object.keys(organizerMap).length} organizers`);
 
-    // ✅ Auto-expire past events - update status in database
-    const now = new Date();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const pastActiveEvents = (events || []).filter(event => {
-      const eventDate = new Date(event.date);
-      return eventDate < today && event.status === 'active';
-    });
-
-    if (pastActiveEvents.length > 0) {
-      console.log(`⏰ Found ${pastActiveEvents.length} past active events to expire`);
-      
-      // Update all past active events to 'ended' status
-      const pastEventIds = pastActiveEvents.map(e => e.id);
-      const { error: updateError } = await supabase
-        .from('events')
-        .update({ status: 'ended' })
-        .in('id', pastEventIds);
-
-      if (updateError) {
-        console.error('⚠️ Failed to update past events:', updateError);
-      } else {
-        console.log(`✅ Updated ${pastActiveEvents.length} events to 'ended' status`);
-        // Update the local events array to reflect the change
-        events.forEach(event => {
-          if (pastEventIds.includes(event.id)) {
-            event.status = 'ended';
-          }
-        });
-      }
-    }
+    // ✅ Auto-expire past events — only mark ended when end_date+end_time has fully passed.
+    // Use end_date (not start date) so multi-day events are not prematurely ended.
+    // Delegate to updateExpiredEvents (which already handles WAT→UTC conversion correctly).
+    // The call at the top of this function already ran it — no need to duplicate the logic here.
 
     // Fetch all successful transactions for revenue calculation
     const { data: transactions, error: txError } = await supabase
