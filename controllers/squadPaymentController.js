@@ -979,82 +979,262 @@ export const verifyPaymentController = async (req, res) => {
 };
 
 /**
- * Callback handler for Squad webhook
+ * Webhook handler for Squad payment notifications
  * POST /api/v1/payments/squad/callback
- * 
- * Squad will send payment status to this endpoint
+ *
+ * Squad POSTs here when a payment is finalized.
+ * ALWAYS return 200 — Squad retries on non-200 which would double-process.
+ * Signature: x-squad-encrypted-body header = HMAC-SHA512(rawBody, SQUADCO_API_KEY)
  */
 export const callbackHandler = async (req, res) => {
+  const startTs = new Date().toISOString();
+
+  // ── 1. Signature verification ─────────────────────────────────────────────
+  // Squad signs the raw body with HMAC-SHA512 using your secret key.
+  // The signature is in the x-squad-encrypted-body header.
   try {
-    const callbackData = req.body;
-
-    console.log('📨 Squad Callback Received:', {
-      transactionRef: callbackData.transaction_ref,
-      status: callbackData.status,
-      amount: callbackData.amount,
-      email: callbackData.customer_email,
-      timestamp: new Date().toISOString(),
-      fullPayload: JSON.stringify(callbackData, null, 2),
-    });
-
-    // Validate callback data
-    if (!callbackData.transaction_ref || !callbackData.status) {
-      console.warn('⚠️ Invalid callback data received');
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid callback data',
-      });
+    const signature = req.headers['x-squad-encrypted-body'];
+    if (signature && process.env.SQUADCO_API_KEY) {
+      const { createHmac } = await import('crypto');
+      const rawBody = JSON.stringify(req.body);
+      const expected = createHmac('sha512', process.env.SQUADCO_API_KEY)
+        .update(rawBody)
+        .digest('hex');
+      if (signature.toLowerCase() !== expected.toLowerCase()) {
+        console.warn('[WEBHOOK] ⚠️ Signature mismatch — possible spoofed request. Ignoring.', {
+          received: signature.substring(0, 20) + '...',
+          timestamp: startTs,
+        });
+        // Return 200 so Squad doesn't retry (the payload is invalid anyway)
+        return res.status(200).json({ success: false, message: 'Signature mismatch' });
+      }
+      console.log('[WEBHOOK] ✅ Signature verified');
+    } else {
+      console.warn('[WEBHOOK] ⚠️ No signature header — proceeding without verification');
     }
-
-    // Process based on payment status
-    const { transaction_ref, status, amount, customer_email } = callbackData;
-
-    if (status === 'success') {
-      console.log('✅ Payment Successful:', {
-        transactionRef: transaction_ref,
-        amount,
-        email: customer_email,
-      });
-
-      // TODO: Update your database with successful payment
-      // TODO: Generate tickets/send confirmation email
-      // TODO: Credit user account/wallet
-    } else if (status === 'failed') {
-      console.log('❌ Payment Failed:', {
-        transactionRef: transaction_ref,
-        reason: callbackData.reason || 'Unknown',
-      });
-
-      // TODO: Update database with failed payment
-      // TODO: Send failure notification to user
-    } else if (status === 'pending') {
-      console.log('⏳ Payment Pending:', {
-        transactionRef: transaction_ref,
-      });
-
-      // TODO: Update database with pending status
-    }
-
-    // Always return 200 to acknowledge receipt
-    return res.status(200).json({
-      success: true,
-      message: 'Callback received and processed',
-      transactionRef: transaction_ref,
-    });
-  } catch (error) {
-    console.error('❌ Callback Handler Error:', {
-      message: error.message,
-      stack: error.stack,
-      timestamp: new Date().toISOString(),
-    });
-
-    // Still return 200 to prevent Squad from retrying
-    return res.status(200).json({
-      success: false,
-      message: 'Callback processed with error',
-      error: error.message,
-    });
+  } catch (sigErr) {
+    console.error('[WEBHOOK] Signature check error (non-blocking):', sigErr.message);
   }
+
+  const callbackData = req.body;
+  console.log('[WEBHOOK] Received:', {
+    transaction_ref: callbackData.transaction_ref,
+    status: callbackData.status,
+    amount: callbackData.amount,
+    timestamp: startTs,
+  });
+
+  // ── 2. Always return 200 immediately so Squad doesn't retry ───────────────
+  // Processing happens asynchronously below.
+  res.status(200).json({ success: true, message: 'Webhook received' });
+
+  // ── 3. Only process success events ───────────────────────────────────────
+  const transactionRef = callbackData.transaction_ref;
+  const paymentStatus  = callbackData.transaction_status || callbackData.status;
+
+  if (!transactionRef) {
+    console.warn('[WEBHOOK] Missing transaction_ref — skipping');
+    return;
+  }
+  if (paymentStatus !== 'success') {
+    console.log(`[WEBHOOK] Status is '${paymentStatus}' — no action needed`);
+    return;
+  }
+
+  // ── 4. Full post-payment processing (async, after 200 already sent) ───────
+  (async () => {
+    try {
+      const normalizedRef = normalizeReference(transactionRef);
+      console.log('[WEBHOOK] Processing success for reference:', normalizedRef);
+
+      // Look up the transaction
+      const { data: transaction, error: txErr } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('reference', normalizedRef)
+        .maybeSingle();
+
+      if (txErr || !transaction) {
+        console.error('[WEBHOOK] Transaction not found:', normalizedRef, txErr?.message);
+        return;
+      }
+
+      // ── Idempotency: already processed ──────────────────────────────────
+      if (transaction.status === 'success') {
+        console.log('[WEBHOOK] Already success — skipping (idempotent)');
+        return;
+      }
+
+      console.log('[WEBHOOK] Marking transaction as success:', transaction.id);
+
+      // Mark the primary row as success
+      const { error: updateErr } = await supabase
+        .from('transactions')
+        .update({
+          status: 'success',
+          squadco_response: {
+            ...transaction.squadco_response,
+            squad_webhook: callbackData,
+          },
+          verified_at: new Date().toISOString(),
+        })
+        .eq('id', transaction.id);
+
+      if (updateErr) {
+        console.error('[WEBHOOK] Failed to mark success:', updateErr.message);
+        return;
+      }
+
+      console.log('[WEBHOOK] ✅ Transaction marked success');
+
+      // ── Parse cartItems / attendees ──────────────────────────────────────
+      let rawResponse = transaction.squadco_response || {};
+      if (typeof rawResponse === 'string') {
+        try { rawResponse = JSON.parse(rawResponse); } catch(_) { rawResponse = {}; }
+      }
+      const cartItems = Array.isArray(rawResponse.cartItems) ? rawResponse.cartItems : [];
+      const attendees = Array.isArray(rawResponse.attendees) ? rawResponse.attendees : [];
+      const buyerPhone = attendees.length > 0
+        ? (attendees[0]?.phone || attendees[0]?.phoneNumber || null)
+        : null;
+
+      // ── Fetch event for ticket type name resolution ──────────────────────
+      let eventData = null;
+      try {
+        const { data: ev } = await supabase
+          .from('events')
+          .select('id, title, date, end_date, start_time, end_time, location, organizer_id, tickets_sold, total_tickets, ticket_types')
+          .eq('id', transaction.event_id)
+          .single();
+        eventData = ev;
+      } catch (_) {}
+
+      const ticketTypeMap = {};
+      if (Array.isArray(eventData?.ticket_types)) {
+        for (const tt of eventData.ticket_types) {
+          if (tt.id) ticketTypeMap[tt.id] = tt.name || 'Ticket';
+        }
+      }
+
+      // ── Per-type split (same idempotency as verify path) ─────────────────
+      const { data: existingRows } = await supabase
+        .from('transactions')
+        .select('id, quantity')
+        .ilike('reference', `${transaction.reference}%`)
+        .eq('status', 'success');
+
+      const existingCount = Array.isArray(existingRows) ? existingRows.length : 0;
+      const alreadyExpanded = cartItems.length > 0
+        ? existingCount >= cartItems.length
+        : existingCount > 1;
+
+      console.log(`[WEBHOOK] Per-type: existingCount=${existingCount}, cartItems=${cartItems.length}, alreadyExpanded=${alreadyExpanded}`);
+
+      if (cartItems.length > 0 && !alreadyExpanded) {
+        const verifiedAt = new Date().toISOString();
+        const firstItem = cartItems[0];
+        const firstTypeId = firstItem.id || firstItem.ticket_type_id || null;
+        const firstTypeName = firstTypeId ? (ticketTypeMap[firstTypeId] || firstItem.name || null) : null;
+        const firstQty = parseInt(firstItem.quantity) || 1;
+        const firstPrice = parseFloat(firstItem.price || firstItem.ticket_price || 0) * firstQty;
+        const orderProcessingFee = transaction.processing_fee || 0;
+
+        await supabase.from('transactions').update({
+          squadco_response: { ...(typeof transaction.squadco_response === 'object' ? transaction.squadco_response : {}), tier_id: firstTypeId, tier_name: firstTypeName },
+          ticket_price: firstPrice,
+          processing_fee: orderProcessingFee,
+          total_amount: firstPrice + orderProcessingFee,
+          platform_commission: firstPrice * 0.03,
+          organizer_earnings: firstPrice * 0.97,
+          quantity: firstQty,
+          attendees,
+          buyer_phone: buyerPhone,
+        }).eq('id', transaction.id);
+
+        for (let i = 1; i < cartItems.length; i++) {
+          const item = cartItems[i];
+          const typeId = item.id || item.ticket_type_id || null;
+          const typeName = typeId ? (ticketTypeMap[typeId] || item.name || null) : null;
+          const itemQty = parseInt(item.quantity) || 1;
+          const itemPrice = parseFloat(item.price || item.ticket_price || 0) * itemQty;
+
+          const { error: insertErr } = await supabase.from('transactions').insert([{
+            reference: `${transaction.reference}_${i}`,
+            event_id: transaction.event_id,
+            organizer_id: transaction.organizer_id,
+            buyer_email: transaction.buyer_email,
+            buyer_name: transaction.buyer_name,
+            buyer_phone: buyerPhone,
+            squadco_response: { ...(typeof transaction.squadco_response === 'object' ? transaction.squadco_response : {}), tier_id: typeId, tier_name: typeName },
+            ticket_price: itemPrice,
+            processing_fee: 0,
+            total_amount: itemPrice,
+            platform_commission: itemPrice * 0.03,
+            squadco_fee: 0,
+            organizer_earnings: itemPrice * 0.97,
+            quantity: itemQty,
+            attendees,
+            status: 'success',
+            verified_at: verifiedAt,
+            ip_address: transaction.ip_address,
+            user_agent: transaction.user_agent,
+          }]);
+
+          if (insertErr) console.error(`[WEBHOOK] Insert row ${i} failed:`, insertErr.message);
+          else console.log(`[WEBHOOK] Row ${i} inserted for tier ${typeId}`);
+        }
+      }
+
+      // ── Update event tickets_sold ─────────────────────────────────────────
+      if (!alreadyExpanded) {
+        try {
+          const totalQty = cartItems.length > 0
+            ? cartItems.reduce((acc, item) => acc + (parseInt(item.quantity) || 1), 0)
+            : 1;
+          const { data: freshEvent } = await supabase.from('events').select('tickets_sold').eq('id', transaction.event_id).single();
+          await supabase.from('events').update({ tickets_sold: (freshEvent?.tickets_sold || 0) + totalQty }).eq('id', transaction.event_id);
+          console.log(`[WEBHOOK] tickets_sold +${totalQty}`);
+        } catch (e) { console.error('[WEBHOOK] tickets_sold update error:', e.message); }
+      }
+
+      // ── Credit organizer wallet ───────────────────────────────────────────
+      if (!alreadyExpanded) {
+        const totalEarnings = cartItems.length > 0
+          ? cartItems.reduce((s, item) => s + parseFloat(item.price || item.ticket_price || 0) * (parseInt(item.quantity) || 1) * 0.97, 0)
+          : (transaction.organizer_earnings || 0);
+
+        if (totalEarnings > 0) {
+          const walletResult = await creditOrganizerWallet(transaction.organizer_id, totalEarnings);
+          if (walletResult.success) console.log(`[WEBHOOK] Wallet credited ₦${totalEarnings}`);
+          else console.error('[WEBHOOK] Wallet credit failed:', walletResult.error);
+        }
+      }
+
+      // ── Send confirmation email ───────────────────────────────────────────
+      if (!alreadyExpanded) {
+        try {
+          const { sendTicketPurchaseConfirmation } = await import('../services/emailService.js');
+          await sendTicketPurchaseConfirmation({
+            buyerName: transaction.buyer_name,
+            buyerEmail: transaction.buyer_email,
+            reference: transaction.reference,
+            event: eventData,
+            cartItems,
+            attendees,
+            totalAmount: transaction.total_amount,
+          });
+          console.log('[WEBHOOK] ✅ Confirmation email sent to', transaction.buyer_email);
+        } catch (emailErr) {
+          console.error('[WEBHOOK] Email send failed (non-blocking):', emailErr.message);
+        }
+      }
+
+      console.log('[WEBHOOK] ✅ Full processing complete for', normalizedRef);
+    } catch (err) {
+      console.error('[WEBHOOK] Async processing error:', err.message, err.stack);
+      // Do not rethrow — 200 already sent, Squad must not retry
+    }
+  })();
 };
 
 /**
