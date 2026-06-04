@@ -434,25 +434,67 @@ router.get('/past-events', verifyToken, async (req, res) => {
     let transactionMap = {};
 
     if (eventIds.length > 0) {
+      // Fetch transactions with tier info from squadco_response
       const { data: transactions } = await supabase
         .from('transactions')
-        .select('event_id, organizer_earnings')
+        .select('event_id, organizer_earnings, quantity, squadco_response')
         .in('event_id', eventIds)
         .eq('status', 'success');
 
       if (transactions) {
         transactionMap = transactions.reduce((acc, t) => {
           if (!acc[t.event_id]) {
-            acc[t.event_id] = { count: 0, revenue: 0 };
+            acc[t.event_id] = { count: 0, revenue: 0, byTier: {} };
           }
-          acc[t.event_id].count += 1;
+          const qty = parseInt(t.quantity) || 1;
+          acc[t.event_id].count += qty;
           acc[t.event_id].revenue += Number(t.organizer_earnings || 0);
+
+          // Accumulate sold count per tier
+          const sr = typeof t.squadco_response === 'string'
+            ? (() => { try { return JSON.parse(t.squadco_response); } catch(_) { return {}; } })()
+            : (t.squadco_response || {});
+          const tierId = sr.tier_id || null;
+          if (tierId) {
+            acc[t.event_id].byTier[tierId] = (acc[t.event_id].byTier[tierId] || 0) + qty;
+          }
           return acc;
         }, {});
       }
     }
 
-    // Enrich events with transaction data
+    // Fetch ticket_types for all events from the ticket_types table
+    let ticketTypesMap = {};
+    if (eventIds.length > 0) {
+      const { data: ticketTypeRows } = await supabase
+        .from('ticket_types')
+        .select('id, event_id, name, price, quantity')
+        .in('event_id', eventIds);
+
+      // Fall back to JSONB column if ticket_types table has no rows for an event
+      const { data: eventsWithJsonb } = await supabase
+        .from('events')
+        .select('id, ticket_types')
+        .in('id', eventIds);
+
+      const jsonbMap = Object.fromEntries((eventsWithJsonb || []).map(e => [e.id, e.ticket_types || []]));
+
+      for (const eventId of eventIds) {
+        const rows = (ticketTypeRows || []).filter(tt => tt.event_id === eventId);
+        const source = rows.length > 0 ? rows : (jsonbMap[eventId] || []);
+        const byTier = transactionMap[eventId]?.byTier || {};
+
+        ticketTypesMap[eventId] = source.map(tt => ({
+          id: tt.id || null,
+          name: tt.name || 'Ticket',
+          price: Number(tt.price || 0),
+          quantity: Number(tt.quantity || 0),         // total capacity
+          quantity_sold: byTier[tt.id] || 0,          // sold for this tier
+        }));
+      }
+    }
+
+    // Enrich events with transaction data and ticket_types
     const enrichedEvents = (events || []).map(e => ({
       id: e.id,
       title: e.title,
@@ -461,7 +503,8 @@ router.get('/past-events', verifyToken, async (req, res) => {
       end_time: e.end_time,
       total_tickets: Number(e.total_tickets || 0),
       tickets_sold: transactionMap[e.id]?.count || 0,
-      total_revenue: Number((transactionMap[e.id]?.revenue || 0).toFixed(2))
+      total_revenue: Number((transactionMap[e.id]?.revenue || 0).toFixed(2)),
+      ticket_types: ticketTypesMap[e.id] || [],
     }));
 
     return res.status(200).json({
