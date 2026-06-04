@@ -1902,10 +1902,70 @@ export const backfillTransactions = async (req, res) => {
 
     console.log(`[BACKFILL] Done. fixed=${results.fixed}, skipped=${results.skipped}, errors=${results.errors}, syncedEvents=${syncedEvents}`);
 
+    // 3. Re-sync wallets.available_balance and total_earned from transactions
+    console.log('[BACKFILL] Re-syncing wallet balances...');
+    const { data: allTxForWallet } = await supabaseAdmin
+      .from('transactions')
+      .select('organizer_id, organizer_earnings')
+      .eq('status', 'success');
+
+    const earningsByOrg = {};
+    for (const t of (allTxForWallet || [])) {
+      if (t.organizer_id) {
+        earningsByOrg[t.organizer_id] = (earningsByOrg[t.organizer_id] || 0) + Number(t.organizer_earnings || 0);
+      }
+    }
+
+    let syncedWallets = 0;
+    const walletCorrections = [];
+    for (const [orgId, totalEarned] of Object.entries(earningsByOrg)) {
+      const correctBalance = Number(totalEarned.toFixed(2));
+
+      // Fetch current wallet to check for discrepancy and preserve pending_balance
+      const { data: wallet } = await supabaseAdmin
+        .from('wallets')
+        .select('available_balance, total_earned, pending_balance')
+        .eq('organizer_id', orgId)
+        .maybeSingle();
+
+      if (!wallet) {
+        console.log(`[BACKFILL] No wallet found for organizer ${orgId} — skipping`);
+        continue;
+      }
+
+      const currentBalance = Number(wallet.available_balance || 0);
+      if (Math.abs(currentBalance - correctBalance) > 1) {
+        walletCorrections.push({ organizer_id: orgId, old_balance: currentBalance, new_balance: correctBalance });
+
+        const { error: walletErr } = await supabaseAdmin
+          .from('wallets')
+          .update({
+            available_balance: correctBalance,
+            total_earned: correctBalance,
+            // pending_balance is NOT touched — it tracks withdrawal requests in progress
+          })
+          .eq('organizer_id', orgId);
+
+        if (!walletErr) {
+          syncedWallets++;
+          console.log(`[BACKFILL] Wallet synced for ${orgId}: ₦${currentBalance} → ₦${correctBalance}`);
+        } else {
+          console.error(`[BACKFILL] Wallet sync failed for ${orgId}:`, walletErr.message);
+        }
+      }
+    }
+
+    console.log(`[BACKFILL] Wallet sync complete. syncedWallets=${syncedWallets}`);
+
     return res.status(200).json({
       success: true,
       message: 'Backfill complete',
-      results: { ...results, synced_events: syncedEvents },
+      results: {
+        ...results,
+        synced_events: syncedEvents,
+        synced_wallets: syncedWallets,
+        wallet_corrections: walletCorrections,
+      },
     });
   } catch (error) {
     console.error('[BACKFILL] Fatal error:', error);
@@ -2115,6 +2175,7 @@ export const getWalletIntegrity = async (req, res) => {
     const allRows = (wallets || []).map(w => {
       const calculatedEarnings = Number((earningsMap[w.organizer_id] || 0).toFixed(2));
       const availableBalance   = Number(w.available_balance || 0);
+      // ✅ FIX: use Math.abs so both over-credited AND under-credited wallets are flagged
       const discrepancy        = Number((availableBalance - calculatedEarnings).toFixed(2));
 
       return {
@@ -2125,7 +2186,8 @@ export const getWalletIntegrity = async (req, res) => {
         wallet_total_earned:  Number(w.total_earned || 0),
         calculated_earnings:  calculatedEarnings,
         discrepancy,
-        has_discrepancy:      discrepancy > 0.01, // more than 1 kobo over
+        // Flag if difference > ₦1 in either direction (over OR under credited)
+        has_discrepancy:      Math.abs(discrepancy) > 1,
       };
     });
 
