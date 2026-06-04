@@ -852,20 +852,13 @@ export const verifyPaymentController = async (req, res) => {
     }
 
     // 🔑 Fetch all rows for this reference (per-type split rows)
-    // and the event title for the confirmation page
-    const [allRowsResult, eventTitleResult] = await Promise.all([
-      supabase
-        .from('transactions')
-        .select('id, reference, buyer_email, buyer_name, total_amount, ticket_price, processing_fee, platform_commission, organizer_earnings, quantity, status, created_at, verified_at, squadco_response')
-        .ilike('reference', `${transaction.reference}%`)
-        .eq('status', 'success')
-        .order('created_at', { ascending: true }),
-      supabase
-        .from('events')
-        .select('id, title, date, location')
-        .eq('id', transaction.event_id)
-        .single(),
-    ]);
+    // eventData already has title/date/location from the early fetch above — reuse it
+    const allRowsResult = await supabase
+      .from('transactions')
+      .select('id, reference, buyer_email, buyer_name, total_amount, ticket_price, processing_fee, platform_commission, organizer_earnings, quantity, status, created_at, verified_at, squadco_response')
+      .ilike('reference', `${transaction.reference}%`)
+      .eq('status', 'success')
+      .order('created_at', { ascending: true });
 
     const allRows = (allRowsResult.data || []).map(row => {
       const sr = typeof row.squadco_response === 'string'
@@ -890,8 +883,7 @@ export const verifyPaymentController = async (req, res) => {
       };
     });
 
-    const eventInfo = eventTitleResult.data;
-
+    // Use eventData already fetched above — no redundant DB call needed
     return res.status(200).json({
       // ─────────────────────────────────────────────────────────────────────────
       // ⚠️  PRODUCTION CONTRACT — DO NOT CHANGE SHAPE WITHOUT FRONTEND SIGN-OFF
@@ -920,9 +912,9 @@ export const verifyPaymentController = async (req, res) => {
         reference: transaction.reference,
         amount: transaction.total_amount,
         email: transaction.buyer_email,
-        event_title: eventInfo?.title || null,
-        event_date: eventInfo?.date || null,
-        event_location: eventInfo?.location || null,
+        event_title: eventData?.title || null,
+        event_date: eventData?.date || null,
+        event_location: eventData?.location || null,
         transaction: {
           id: transaction.id,
           reference: transaction.reference,
@@ -936,7 +928,7 @@ export const verifyPaymentController = async (req, res) => {
           status: 'success',
           created_at: transaction.created_at,
           verified_at: new Date().toISOString(),
-          event_title: eventInfo?.title || null,
+          event_title: eventData?.title || null,
         },
         all_transactions: allRows,
         ticket: null,
