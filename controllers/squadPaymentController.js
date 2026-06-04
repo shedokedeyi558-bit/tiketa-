@@ -396,9 +396,50 @@ export const verifyPaymentController = async (req, res) => {
       match: normalizeReference(transaction.reference) === normalizedReference ? '✅ MATCH' : '❌ MISMATCH',
     });
 
-    // Check if already verified
+    // Check if already verified — return the same full shape as the normal path
     if (transaction.status === 'success') {
-      console.log('✅ Transaction already verified');
+      console.log('✅ Transaction already verified — building full response shape');
+
+      // Fetch event info and all split rows in parallel
+      const [allRowsResult, eventResult] = await Promise.all([
+        supabase
+          .from('transactions')
+          .select('id, reference, buyer_email, buyer_name, total_amount, ticket_price, processing_fee, platform_commission, organizer_earnings, quantity, status, created_at, verified_at, squadco_response')
+          .ilike('reference', `${transaction.reference}%`)
+          .eq('status', 'success')
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('events')
+          .select('id, title, date, location')
+          .eq('id', transaction.event_id)
+          .single(),
+      ]);
+
+      const eventInfo = eventResult.data;
+
+      const allRows = (allRowsResult.data || []).map(row => {
+        const sr = typeof row.squadco_response === 'string'
+          ? (() => { try { return JSON.parse(row.squadco_response); } catch(_) { return {}; } })()
+          : (row.squadco_response || {});
+        return {
+          id: row.id,
+          reference: row.reference,
+          buyer_email: row.buyer_email,
+          buyer_name: row.buyer_name,
+          total_amount: Number(row.total_amount || 0),
+          ticket_price: Number(row.ticket_price || 0),
+          processing_fee: Number(row.processing_fee || 0),
+          platform_commission: Number(row.platform_commission || 0),
+          organizer_earnings: Number(row.organizer_earnings || 0),
+          quantity: row.quantity || 1,
+          ticket_type_id: sr.tier_id || null,
+          ticket_type_name: sr.tier_name || null,
+          status: row.status,
+          created_at: row.created_at,
+          verified_at: row.verified_at,
+        };
+      });
+
       return res.status(200).json({
         success: true,
         message: 'Payment already verified',
@@ -407,6 +448,9 @@ export const verifyPaymentController = async (req, res) => {
           reference: transaction.reference,
           amount: transaction.total_amount,
           email: transaction.buyer_email,
+          event_title:    eventInfo?.title    || null,
+          event_date:     eventInfo?.date     || null,
+          event_location: eventInfo?.location || null,
           transaction: {
             id: transaction.id,
             reference: transaction.reference,
@@ -420,7 +464,9 @@ export const verifyPaymentController = async (req, res) => {
             status: transaction.status,
             created_at: transaction.created_at,
             verified_at: transaction.verified_at,
+            event_title: eventInfo?.title || null,
           },
+          all_transactions: allRows,
           ticket: null,
         },
       });
