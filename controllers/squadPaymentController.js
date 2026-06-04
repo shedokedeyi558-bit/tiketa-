@@ -623,7 +623,7 @@ export const verifyPaymentController = async (req, res) => {
     });
     console.log('[PER-TYPE] attendees count:', attendees.length);
 
-    // ─── Fetch event details (needed for email + ticket_type name resolution) ───
+    // ─── Fetch event details (for email only — name resolution uses item.name directly) ──
     let eventData = null;
     try {
       const { data: ev } = await supabase
@@ -635,14 +635,8 @@ export const verifyPaymentController = async (req, res) => {
     } catch (e) {
       console.error('⚠️ Failed to fetch event for post-payment processing:', e.message);
     }
-
-    // Build a lookup map: ticket_type_id → name from the event's ticket_types JSONB
-    const ticketTypeMap = {};
-    if (Array.isArray(eventData?.ticket_types)) {
-      for (const tt of eventData.ticket_types) {
-        if (tt.id) ticketTypeMap[tt.id] = tt.name || tt.type || 'Ticket';
-      }
-    }
+    // NOTE: tier_name comes directly from item.name sent by the frontend —
+    // ticketTypeMap lookup removed because frontend IDs never match JSONB IDs.
 
     // ─── Idempotency guard ────────────────────────────────────────────────────
     // The split is complete when existingCount >= cartItems.length.
@@ -677,7 +671,9 @@ export const verifyPaymentController = async (req, res) => {
       // ticket_type_id column is UUID type so we CANNOT write these string IDs there.
       // Instead we store tier_id and tier_name inside squadco_response JSONB on each row.
       const firstTypeId = firstItem.id || firstItem.ticket_type_id || firstItem.ticketTypeId || firstItem.typeId || firstItem.type_id || null;
-      const firstTypeName = firstTypeId ? (ticketTypeMap[firstTypeId] || firstItem.name || firstItem.typeName || firstItem.type_name || null) : null;
+      // ✅ FIX: Use item.name directly — frontend always populates it.
+      // ticketTypeMap lookup removed — frontend IDs never match event JSONB IDs.
+      const firstTypeName = firstItem.name || firstItem.typeName || firstItem.type_name || null;
       const firstItemQty = parseInt(firstItem.quantity) || 1;
       const firstItemUnitPrice = parseFloat(firstItem.price || firstItem.ticket_price || 0);
       const firstItemPrice = firstItemUnitPrice * firstItemQty;
@@ -720,7 +716,8 @@ export const verifyPaymentController = async (req, res) => {
         const item = cartItems[i];
         // Resolve tier ID for this specific item (NOT firstItem)
         const typeId = item.id || item.ticket_type_id || item.ticketTypeId || item.typeId || item.type_id || null;
-        const typeName = typeId ? (ticketTypeMap[typeId] || item.name || item.typeName || item.type_name || null) : null;
+        // ✅ FIX: Use item.name directly
+        const typeName = item.name || item.typeName || item.type_name || null;
         const itemQty = parseInt(item.quantity) || 1;
         const itemUnitPrice = parseFloat(item.price || item.ticket_price || 0);
         const itemPrice = itemUnitPrice * itemQty;
@@ -1098,7 +1095,7 @@ export const callbackHandler = async (req, res) => {
         ? (attendees[0]?.phone || attendees[0]?.phoneNumber || null)
         : null;
 
-      // ── Fetch event for ticket type name resolution ──────────────────────
+      // ── Fetch event for email (name comes from item.name, not ticketTypeMap) ──
       let eventData = null;
       try {
         const { data: ev } = await supabase
@@ -1108,13 +1105,7 @@ export const callbackHandler = async (req, res) => {
           .single();
         eventData = ev;
       } catch (_) {}
-
-      const ticketTypeMap = {};
-      if (Array.isArray(eventData?.ticket_types)) {
-        for (const tt of eventData.ticket_types) {
-          if (tt.id) ticketTypeMap[tt.id] = tt.name || 'Ticket';
-        }
-      }
+      // NOTE: tier_name comes directly from item.name — ticketTypeMap removed.
 
       // ── Per-type split (same idempotency as verify path) ─────────────────
       const { data: existingRows } = await supabase
@@ -1132,9 +1123,11 @@ export const callbackHandler = async (req, res) => {
 
       if (cartItems.length > 0 && !alreadyExpanded) {
         const verifiedAt = new Date().toISOString();
+        const splitRows = []; // track for verification log
         const firstItem = cartItems[0];
         const firstTypeId = firstItem.id || firstItem.ticket_type_id || null;
-        const firstTypeName = firstTypeId ? (ticketTypeMap[firstTypeId] || firstItem.name || null) : null;
+        // ✅ FIX: Use item.name directly — frontend always sends it
+        const firstTypeName = firstItem.name || null;
         const firstQty = parseInt(firstItem.quantity) || 1;
         const firstPrice = parseFloat(firstItem.price || firstItem.ticket_price || 0) * firstQty;
         const orderProcessingFee = transaction.processing_fee || 0;
@@ -1151,10 +1144,13 @@ export const callbackHandler = async (req, res) => {
           buyer_phone: buyerPhone,
         }).eq('id', transaction.id);
 
+        splitRows.push({ ref: transaction.reference, qty: firstQty, tier_name: firstTypeName });
+
         for (let i = 1; i < cartItems.length; i++) {
           const item = cartItems[i];
           const typeId = item.id || item.ticket_type_id || null;
-          const typeName = typeId ? (ticketTypeMap[typeId] || item.name || null) : null;
+          // ✅ FIX: Use item.name directly
+          const typeName = item.name || null;
           const itemQty = parseInt(item.quantity) || 1;
           const itemPrice = parseFloat(item.price || item.ticket_price || 0) * itemQty;
 
@@ -1181,8 +1177,14 @@ export const callbackHandler = async (req, res) => {
           }]);
 
           if (insertErr) console.error(`[WEBHOOK] Insert row ${i} failed:`, insertErr.message);
-          else console.log(`[WEBHOOK] Row ${i} inserted for tier ${typeId}`);
+          else {
+            splitRows.push({ ref: `${transaction.reference}_${i}`, qty: itemQty, tier_name: typeName });
+            console.log(`[WEBHOOK] Row ${i} inserted for tier '${typeName}'`);
+          }
         }
+
+        // ✅ Verification log — check in Render logs after test payment
+        console.log('[WEBHOOK] Split complete. Rows inserted:', JSON.stringify(splitRows));
       }
 
       // ── Update event tickets_sold ─────────────────────────────────────────
