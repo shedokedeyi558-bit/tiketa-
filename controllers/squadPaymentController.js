@@ -632,11 +632,23 @@ export const verifyPaymentController = async (req, res) => {
       .eq('status', 'success');
 
     const existingCount = Array.isArray(existingPerTypeRows) ? existingPerTypeRows.length : 0;
-    const alreadyExpanded = cartItems.length > 0
-      ? existingCount >= cartItems.length
-      : existingCount > 1;
+    // ─── Idempotency guard ────────────────────────────────────────────────────
+    // alreadyExpanded = the per-type split AND wallet credit already ran on a previous call.
+    //
+    // We look at whether the original row already has `quantity` set:
+    //   - quantity = null → this is the FIRST call, always proceed with split + wallet
+    //   - quantity > 0   → split already ran; for multi-item carts check row count too
+    //
+    // Single-item cart: existingCount=1, cartItems.length=1 → old check (1>=1=true) would skip
+    // wallet credit on the FIRST call. Fixed by using quantity as the primary gate.
+    const originalRowData = existingPerTypeRows?.find(r => r.id === transaction.id);
+    const originalRowHasQuantity = originalRowData?.quantity != null && originalRowData?.quantity > 0;
 
-    console.log(`[PER-TYPE] idempotency check: existingCount=${existingCount}, cartItems.length=${cartItems.length}, alreadyExpanded=${alreadyExpanded}`);
+    const alreadyExpanded = cartItems.length > 1
+      ? existingCount >= cartItems.length          // multi-item: all rows written
+      : originalRowHasQuantity;                    // single-item: quantity already set = already processed
+
+    console.log(`[PER-TYPE] idempotency check: existingCount=${existingCount}, cartItems.length=${cartItems.length}, originalRow.quantity=${originalRowData?.quantity}, alreadyExpanded=${alreadyExpanded}`);
 
     // ─── Per-ticket-type transaction rows ─────────────────────────────────────
     // Strategy: one DB row per cart item (ticket type).
