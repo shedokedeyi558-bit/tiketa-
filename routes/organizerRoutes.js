@@ -269,14 +269,16 @@ function groupTransactionsByReference(rows, eventTitleMap = {}) {
     const totalAmount       = groupRows.reduce((s, { row: r }) => s + Number(r.total_amount || 0), 0);
     const orgEarnings       = groupRows.reduce((s, { row: r }) => s + Number(r.organizer_earnings || 0), 0);
     const platCommission    = groupRows.reduce((s, { row: r }) => s + Number(r.platform_commission || 0), 0);
-    const totalQty          = groupRows.reduce((s, { row: r }) => s + (parseInt(r.quantity) || 1), 0);
+    const totalQty          = groupRows.reduce((s, { row: r }) => s + (parseInt(r.quantity) || 0), 0) || groupRows.length;
 
     // Build per-type breakdown
+    // Use r.quantity directly from DB — if null, the per-type update hasn't run yet
+    // Use || 0 not || 1 so null rows don't inflate the displayed count
     const ticketTypes = groupRows.map(({ row: r, sr: rSr }) => ({
-      ticket_type_id:   rSr.tier_id   || null,
-      ticket_type_name: rSr.tier_name || null,
-      quantity:         parseInt(r.quantity) || 1,
-      ticket_price:     Number(r.ticket_price || 0),
+      ticket_type_id:      rSr.tier_id   || null,
+      ticket_type_name:    rSr.tier_name || null,
+      quantity:            r.quantity != null ? parseInt(r.quantity) : null, // preserve null so frontend knows data is incomplete
+      ticket_price:        Number(r.ticket_price || 0),
       organizer_earnings:  Number(r.organizer_earnings || 0),
       platform_commission: Number(r.platform_commission || 0),
     }));
