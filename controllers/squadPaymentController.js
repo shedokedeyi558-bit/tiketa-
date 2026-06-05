@@ -621,34 +621,28 @@ export const verifyPaymentController = async (req, res) => {
     // ticketTypeMap lookup removed because frontend IDs never match JSONB IDs.
 
     // ─── Idempotency guard ────────────────────────────────────────────────────
-    // The split is complete when existingCount >= cartItems.length.
-    // First call:  existingCount=1, cartItems.length=2 → 1 >= 2 = false → proceeds ✅
-    // Second call: existingCount=2, cartItems.length=2 → 2 >= 2 = true  → skips ✅
-    // Single item: existingCount=1, cartItems.length=1 → 1 >= 1 = true on retry ✅
+    // tier_name is written to squadco_response ONLY during the per-type update.
+    // It is never set by a DB default. So tier_name = null → not yet processed.
+    // quantity has DEFAULT 1 from migration — cannot be used as a reliable signal.
     const { data: existingPerTypeRows } = await supabase
       .from('transactions')
-      .select('id, quantity')
+      .select('id, quantity, squadco_response')
       .ilike('reference', `${transaction.reference}%`)
       .eq('status', 'success');
 
     const existingCount = Array.isArray(existingPerTypeRows) ? existingPerTypeRows.length : 0;
-    // ─── Idempotency guard ────────────────────────────────────────────────────
-    // alreadyExpanded = the per-type split AND wallet credit already ran on a previous call.
-    //
-    // We look at whether the original row already has `quantity` set:
-    //   - quantity = null → this is the FIRST call, always proceed with split + wallet
-    //   - quantity > 0   → split already ran; for multi-item carts check row count too
-    //
-    // Single-item cart: existingCount=1, cartItems.length=1 → old check (1>=1=true) would skip
-    // wallet credit on the FIRST call. Fixed by using quantity as the primary gate.
     const originalRowData = existingPerTypeRows?.find(r => r.id === transaction.id);
-    const originalRowHasQuantity = originalRowData?.quantity != null && originalRowData?.quantity > 0;
+    const originalRowSr = typeof originalRowData?.squadco_response === 'string'
+      ? (() => { try { return JSON.parse(originalRowData.squadco_response); } catch(_) { return {}; } })()
+      : (originalRowData?.squadco_response || {});
+    // tier_name is null until the per-type update runs → reliable processed signal
+    const originalRowHasQuantity = originalRowSr.tier_name !== null && originalRowSr.tier_name !== undefined;
 
     const alreadyExpanded = cartItems.length > 1
-      ? existingCount >= cartItems.length          // multi-item: all rows written
-      : originalRowHasQuantity;                    // single-item: quantity already set = already processed
+      ? existingCount >= cartItems.length   // multi-item: all rows written
+      : originalRowHasQuantity;             // single-item: tier_name written = already processed
 
-    console.log(`[PER-TYPE] idempotency check: existingCount=${existingCount}, cartItems.length=${cartItems.length}, originalRow.quantity=${originalRowData?.quantity}, alreadyExpanded=${alreadyExpanded}`);
+    console.log(`[PER-TYPE] idempotency check: existingCount=${existingCount}, cartItems.length=${cartItems.length}, tier_name=${originalRowSr.tier_name ?? 'null'}, alreadyExpanded=${alreadyExpanded}`);
 
     // ─── Per-ticket-type transaction rows ─────────────────────────────────────
     // Strategy: one DB row per cart item (ticket type).
