@@ -62,12 +62,21 @@ router.get('/stats', verifyToken, async (req, res) => {
     const ticketsSold = (transactions || []).reduce((sum, t) => sum + (parseInt(t.quantity) || 1), 0);
     const totalEarned = Number((transactions || []).reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0).toFixed(2));
 
+    // ✅ Read available_balance directly from wallet (reflects actual creditable balance)
+    const { data: wallet } = await supabase
+      .from('wallets')
+      .select('available_balance, pending_balance, total_earned')
+      .eq('organizer_id', organizerId)
+      .maybeSingle();
+
     return res.status(200).json({
       success: true,
       data: {
-        total_events: totalEvents || 0,
-        tickets_sold: ticketsSold,
-        total_earned: totalEarned
+        total_events:      totalEvents || 0,
+        tickets_sold:      ticketsSold,
+        total_earned:      totalEarned,                                    // from transactions (always accurate)
+        available_balance: Number(wallet?.available_balance || 0),         // from wallet table
+        pending_balance:   Number(wallet?.pending_balance   || 0),
       }
     });
   } catch (err) {
