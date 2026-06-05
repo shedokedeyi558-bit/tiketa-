@@ -62,21 +62,31 @@ router.get('/stats', verifyToken, async (req, res) => {
     const ticketsSold = (transactions || []).reduce((sum, t) => sum + (parseInt(t.quantity) || 1), 0);
     const totalEarned = Number((transactions || []).reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0).toFixed(2));
 
-    // ✅ Read available_balance directly from wallet (reflects actual creditable balance)
-    const { data: wallet } = await supabase
-      .from('wallets')
-      .select('available_balance, pending_balance, total_earned')
+    // ✅ Available balance = total earned from transactions minus any pending/approved withdrawals
+    // This is always accurate regardless of wallet table drift — never gets out of sync
+    const { data: withdrawals } = await supabase
+      .from('withdrawals')
+      .select('amount, status')
       .eq('organizer_id', organizerId)
-      .maybeSingle();
+      .in('status', ['pending', 'approved', 'paid']);
+
+    const totalWithdrawn = (withdrawals || []).reduce((sum, w) => sum + Number(w.amount || 0), 0);
+    const availableBalance = Number((totalEarned - totalWithdrawn).toFixed(2));
+    const pendingBalance   = Number(
+      (withdrawals || [])
+        .filter(w => w.status === 'pending')
+        .reduce((sum, w) => sum + Number(w.amount || 0), 0)
+        .toFixed(2)
+    );
 
     return res.status(200).json({
       success: true,
       data: {
         total_events:      totalEvents || 0,
         tickets_sold:      ticketsSold,
-        total_earned:      totalEarned,                                    // from transactions (always accurate)
-        available_balance: Number(wallet?.available_balance || 0),         // from wallet table
-        pending_balance:   Number(wallet?.pending_balance   || 0),
+        total_earned:      totalEarned,       // SUM of organizer_earnings from transactions
+        available_balance: availableBalance,  // total_earned minus withdrawals (always live)
+        pending_balance:   pendingBalance,    // withdrawals with status=pending
       }
     });
   } catch (err) {
