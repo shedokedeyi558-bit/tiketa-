@@ -13,17 +13,32 @@ export async function creditOrganizerWallet(organizerId, amount) {
 
     console.log(`⏳ Crediting wallet: ₦${amount} to organizer ${organizerId}`);
 
-    const { error } = await supabase.rpc('credit_organizer_wallet', {
-      org_id: organizerId,
-      amount: parseFloat(amount),
-    });
+    // ✅ Direct UPDATE — no RPC dependency, no silent failure risk
+    const { data: currentWallet, error: fetchErr } = await supabase
+      .from('wallets')
+      .select('available_balance, total_earned')
+      .eq('organizer_id', organizerId)
+      .single();
 
-    if (error) {
-      console.error('❌ Wallet credit failed:', error);
-      return { success: false, error: error.message };
+    if (fetchErr || !currentWallet) {
+      console.error('❌ Wallet not found for organizer:', organizerId, fetchErr?.message);
+      return { success: false, error: 'Wallet not found' };
     }
 
-    console.log(`✅ Wallet credited: ₦${amount} to organizer ${organizerId}`);
+    const { error: updateErr } = await supabase
+      .from('wallets')
+      .update({
+        available_balance: (currentWallet.available_balance || 0) + amount,
+        total_earned:      (currentWallet.total_earned      || 0) + amount,
+      })
+      .eq('organizer_id', organizerId);
+
+    if (updateErr) {
+      console.error('❌ Wallet credit failed:', updateErr.message);
+      return { success: false, error: updateErr.message };
+    }
+
+    console.log(`✅ Wallet credited: ₦${amount} for organizer ${organizerId}`);
     return { success: true };
   } catch (err) {
     console.error('❌ Wallet credit error:', err);

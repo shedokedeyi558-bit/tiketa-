@@ -688,7 +688,8 @@ export const verifyPaymentController = async (req, res) => {
         .eq('id', transaction.id);
 
       if (updateFirstErr) {
-        console.error('[PER-TYPE] Failed to update row 0:', updateFirstErr.message);
+        console.error('❌ Row 0 update failed:', updateFirstErr.message);
+        // Don't throw — but log clearly so we can catch it in Render logs
       } else {
         console.log(`[PER-TYPE] Row 0 updated: tier_id=${firstTypeId}, tier_name=${firstTypeName}`);
       }
@@ -1109,7 +1110,7 @@ export const callbackHandler = async (req, res) => {
         const firstPrice = parseFloat(firstItem.price || firstItem.ticket_price || 0) * firstQty;
         const orderProcessingFee = transaction.processing_fee || 0;
 
-        await supabase.from('transactions').update({
+        const { error: row0Err } = await supabase.from('transactions').update({
           squadco_response: { ...(typeof transaction.squadco_response === 'object' ? transaction.squadco_response : {}), tier_id: firstTypeId, tier_name: firstTypeName },
           ticket_price: firstPrice,
           processing_fee: orderProcessingFee,
@@ -1120,6 +1121,11 @@ export const callbackHandler = async (req, res) => {
           attendees,
           buyer_phone: buyerPhone,
         }).eq('id', transaction.id);
+
+        if (row0Err) {
+          console.error('[WEBHOOK] ❌ Row 0 update failed:', row0Err.message);
+          // Don't throw — log clearly so we can catch it in Render logs
+        }
 
         splitRows.push({ ref: transaction.reference, qty: firstQty, tier_name: firstTypeName });
 
