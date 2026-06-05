@@ -1,6 +1,21 @@
 import { supabase } from '../utils/supabaseClient.js';
 import { createClient } from '@supabase/supabase-js';
 
+/*
+ * IMPORTANT — READ BEFORE EDITING THIS FILE
+ * 
+ * All event times are stored in Nigerian local time (WAT = UTC+1) without timezone suffix.
+ * The Render server and Supabase both run in UTC (UTC+0).
+ * 
+ * When comparing stored event end times against Date.now():
+ * - We MUST subtract WAT_OFFSET_MS (3,600,000ms = 1 hour) to convert WAT → UTC
+ * - WITHOUT this conversion, events expire 1 hour LATE
+ * - Do NOT remove the WAT_OFFSET_MS subtraction under any circumstances
+ * 
+ * Example: event stored as "18:00:00" means 6:00 PM Nigerian time = 5:00 PM UTC
+ * So we parse as UTC then subtract 1 hour to get the true UTC end time.
+ */
+
 // ✅ Create admin client with service role key for event updates
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -70,6 +85,8 @@ export const updateExpiredEvents = async () => {
         // Times are stored in Nigerian local time (WAT = UTC+1)
         // Parse as if it's UTC, then subtract 1 hour to get the actual UTC time
         const endTimeAsIfUTC = new Date(fullDateTimeStr + 'Z').getTime();
+        // WAT to UTC conversion — Nigerian time is UTC+1, subtract 1 hour to get true UTC end time
+        // DO NOT REMOVE THIS LINE
         const WAT_OFFSET_MS = 60 * 60 * 1000; // 1 hour
         const eventEndMs = endTimeAsIfUTC - WAT_OFFSET_MS; // Convert WAT to UTC
         
