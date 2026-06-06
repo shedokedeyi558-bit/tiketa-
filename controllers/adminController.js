@@ -53,14 +53,14 @@ export const getAdminEvents = async (req, res) => {
     // Fetch all successful transactions for revenue calculation
     const { data: transactions, error: txError } = await supabase
       .from('transactions')
-      .select('event_id, ticket_price, total_amount, organizer_earnings')
+      .select('event_id, ticket_price, total_amount, organizer_earnings, quantity')
       .eq('status', 'success');
 
     if (txError) {
       console.error('⚠️ Failed to fetch transactions:', txError);
     }
 
-    // Build transaction map by event_id
+    // Build transaction map by event_id — sum quantity not row count
     const txMap = {};
     (transactions || []).forEach(tx => {
       if (!txMap[tx.event_id]) {
@@ -68,7 +68,7 @@ export const getAdminEvents = async (req, res) => {
       }
       txMap[tx.event_id].revenue += Number(tx.total_amount || 0);
       txMap[tx.event_id].organizer_earnings += Number(tx.organizer_earnings || 0);
-      txMap[tx.event_id].tickets_sold += 1;
+      txMap[tx.event_id].tickets_sold += (parseInt(tx.quantity) || 1); // ✅ sum quantity not rows
     });
 
     // Enrich events with revenue data
@@ -1369,21 +1369,20 @@ export const getAdminEventById = async (req, res) => {
     console.log('✅ Organizer found:', organizer_name);
 
     // ✅ Fetch transaction data for revenue and tickets sold using service role
-    console.log('🔍 DEBUG - Querying transactions for event_id:', id);
     const { data: txData } = await supabaseAdmin
       .from('transactions')
-      .select('total_amount, organizer_earnings, status')
+      .select('total_amount, organizer_earnings, quantity, status')
       .eq('event_id', id)
       .eq('status', 'success');
 
     console.log('🔍 DEBUG - Transactions found:', txData?.length || 0);
 
-    const tickets_sold = (txData || []).length;
+    // ✅ Sum quantity (not row count) — one row can represent multiple tickets
+    const tickets_sold = (txData || []).reduce((sum, t) => sum + (parseInt(t.quantity) || 1), 0);
     const total_revenue = (txData || []).reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
     const organizer_earnings = (txData || []).reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0);
 
     console.log('✅ Transaction data fetched:', { tickets_sold, total_revenue });
-    console.log('🔍 DEBUG - Transaction details:', JSON.stringify(txData, null, 2));
 
     // ✅ Build comprehensive response with all required fields
     // ✅ Use start_time and end_time directly from database
