@@ -26,10 +26,10 @@ export const getOrganizerEvents = async (req, res) => {
     console.log('⏰ Expiry check result:', expiryResult);
     
     // ✅ Parse query parameters with defaults
-    const status = req.query.status || 'all'; // 'all', 'active', 'cancelled', 'completed' - default to 'all' to show pending events
-    const dateFilter = req.query.dateFilter || 'upcoming'; // 'all', 'upcoming', 'past'
-    const sortBy = req.query.sortBy || 'date'; // 'date', 'title'
-    const sortOrder = req.query.sortOrder === 'desc' ? false : true; // true = asc, false = desc
+    const status = req.query.status || 'all';
+    const dateFilter = req.query.dateFilter || 'all'; // default 'all' — organizer should see ALL their events, not just upcoming
+    const sortBy = req.query.sortBy || 'date';
+    const sortOrder = req.query.sortOrder === 'desc' ? false : true;
 
     console.log('📅 Getting events for organizer:', {
       userId,
