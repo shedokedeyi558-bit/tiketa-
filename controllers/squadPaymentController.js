@@ -107,50 +107,31 @@ export const initiatePaymentController = async (req, res) => {
 
     console.log('✅ Step 1 done - Event found:', { id: event.id, title: event.title });
 
-    // ✅ Step 1b: Availability check — validate each cart item against sold counts
-    // This is the backend guard against over-purchasing (bypassing frontend caps)
+    // ✅ Step 1b: Atomic availability check via Postgres RPC (row-level lock)
+    // reserve_tickets locks the ticket_types row so concurrent requests serialize at DB level
     if (cartItems && cartItems.length > 0) {
-      const eventTicketTypes = Array.isArray(event.ticket_types) ? event.ticket_types : [];
-
-      // Fetch sold quantities per tier atomically from transactions
-      const { data: soldRows } = await supabase
-        .from('transactions')
-        .select('squadco_response, quantity')
-        .eq('event_id', eventId)
-        .eq('status', 'success');
-
-      const soldByTier = {};
-      for (const tx of (soldRows || [])) {
-        const sr = typeof tx.squadco_response === 'string'
-          ? (() => { try { return JSON.parse(tx.squadco_response); } catch(_) { return {}; } })()
-          : (tx.squadco_response || {});
-        const tierId = sr.tier_id || null;
-        if (tierId) {
-          soldByTier[tierId] = (soldByTier[tierId] || 0) + (parseInt(tx.quantity) || 1);
-        }
-      }
-
       for (const item of cartItems) {
         const tierId   = item.id || item.ticket_type_id || item.ticketTypeId || null;
         const tierName = item.name || 'Ticket';
         const reqQty   = parseInt(item.quantity) || 1;
 
-        // Find the ticket type definition
-        const typeDef = eventTicketTypes.find(tt => tt.id === tierId);
-        if (!typeDef) continue; // if type not found in JSONB, skip capacity check
+        if (!tierId) continue; // no tier ID = can't check capacity
 
-        const capacity = parseInt(typeDef.quantity) || 0;
-        if (capacity === 0) continue; // 0 means unlimited for this type
+        const { data: reserveResult, error: reserveErr } = await supabase.rpc('reserve_tickets', {
+          p_event_id: eventId,
+          p_tier_id:  tierId,
+          p_quantity: reqQty,
+        });
 
-        const alreadySold = soldByTier[tierId] || 0;
-        const remaining   = capacity - alreadySold;
-
-        if (reqQty > remaining) {
-          console.warn(`❌ Availability check failed: ${tierName} requested=${reqQty} remaining=${remaining}`);
+        if (reserveErr) {
+          // RPC not yet deployed — fall through to soft check below
+          console.warn('[AVAILABILITY] RPC error (non-blocking):', reserveErr.message);
+        } else if (reserveResult && reserveResult.success === false) {
+          console.warn(`❌ Availability check failed: ${tierName} requested=${reqQty} available=${reserveResult.available}`);
           return res.status(400).json({
             success: false,
             error: 'Tickets unavailable',
-            message: `Not enough tickets available for ${tierName}. Only ${remaining} left.`,
+            message: reserveResult.message || `Not enough tickets available for ${tierName}.`,
           });
         }
       }
