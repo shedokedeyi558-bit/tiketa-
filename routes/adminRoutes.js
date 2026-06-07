@@ -34,6 +34,7 @@ import {
   payWithdrawalController,
   getRecentOrganizersController,
   getRecentTicketsController,
+  approveAndPayController,
 } from '../controllers/adminPayoutController.js';
 import {
   getPlatformSettings,
@@ -113,6 +114,9 @@ router.patch('/payouts/:id/reject', rejectWithdrawalController);
 router.options('/payouts/:id/pay', (req, res) => res.sendStatus(200));
 router.post('/payouts/:id/pay', payWithdrawalController);
 router.patch('/payouts/:id/pay', payWithdrawalController);
+
+// ✅ Combined approve-and-pay — single step payout
+router.post('/withdrawals/:id/approve-and-pay', approveAndPayController);
 
 // Platform settings management
 router.get('/settings', getPlatformSettings); // ✅ Get platform settings (public read)

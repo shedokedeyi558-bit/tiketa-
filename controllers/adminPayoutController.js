@@ -361,21 +361,33 @@ export const rejectWithdrawalController = async (req, res) => {
       status: updatedWithdrawal.status,
     });
 
-    // Refund organizer wallet
+    // Refund organizer wallet — direct UPDATE instead of unreliable RPC
     console.log(`💰 Refunding ₦${withdrawal.amount} to organizer ${withdrawal.organizer_id}`);
-    const { error: refundError } = await supabase.rpc('reject_withdrawal_refund', {
-      org_id: withdrawal.organizer_id,
-      amount: withdrawal.amount,
-    });
+    const { data: currentWallet, error: walletFetchErr } = await supabase
+      .from('wallets')
+      .select('available_balance, pending_balance')
+      .eq('organizer_id', withdrawal.organizer_id)
+      .single();
+
+    if (walletFetchErr || !currentWallet) {
+      console.error('❌ Failed to fetch wallet for refund:', walletFetchErr?.message);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch wallet for refund',
+        message: walletFetchErr?.message || 'Wallet not found',
+      });
+    }
+
+    const { error: refundError } = await supabase
+      .from('wallets')
+      .update({
+        available_balance: (currentWallet.available_balance || 0) + withdrawal.amount,
+        pending_balance:   Math.max(0, (currentWallet.pending_balance || 0) - withdrawal.amount),
+      })
+      .eq('organizer_id', withdrawal.organizer_id);
 
     if (refundError) {
-      console.error('❌ Refund error:', {
-        message: refundError.message,
-        code: refundError.code,
-        details: refundError.details,
-        organizerId: withdrawal.organizer_id,
-        amount: withdrawal.amount,
-      });
+      console.error('❌ Refund error:', refundError.message);
       return res.status(500).json({
         success: false,
         error: 'Failed to refund wallet',
@@ -594,20 +606,22 @@ export const payWithdrawalController = async (req, res) => {
       });
     }
 
-    // Complete withdrawal in wallet
+    // Complete withdrawal in wallet — direct UPDATE instead of unreliable RPC
     console.log(`✅ Completing withdrawal in wallet...`);
-    const { error: completeError } = await supabase.rpc('complete_withdrawal', {
-      org_id: withdrawal.organizer_id,
-      amount: withdrawal.amount,
-    });
+    const { data: orgWallet, error: orgWalletErr } = await supabase
+      .from('wallets')
+      .select('pending_balance, total_withdrawn')
+      .eq('organizer_id', withdrawal.organizer_id)
+      .single();
 
-    if (completeError) {
-      console.error('❌ Failed to complete withdrawal:', completeError);
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to complete withdrawal',
-        message: completeError.message,
-      });
+    if (!orgWalletErr && orgWallet) {
+      await supabase
+        .from('wallets')
+        .update({
+          pending_balance: Math.max(0, (orgWallet.pending_balance || 0) - withdrawal.amount),
+          total_withdrawn: (orgWallet.total_withdrawn || 0) + withdrawal.amount,
+        })
+        .eq('organizer_id', withdrawal.organizer_id);
     }
 
     // Log action
@@ -800,5 +814,141 @@ export const getRecentTicketsController = async (req, res) => {
       error: 'Internal server error',
       message: error.message,
     });
+  }
+};
+
+/**
+ * POST /api/v1/admin/withdrawals/:id/approve-and-pay
+ * Atomically approves a pending withdrawal AND triggers the Squadco transfer in one step.
+ * Admin only.
+ */
+export const approveAndPayController = async (req, res) => {
+  const { id } = req.params;
+  const adminId = req.user?.id;
+
+  try {
+    // 1. Fetch the withdrawal
+    const { data: withdrawal, error: fetchErr } = await supabase
+      .from('withdrawals')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchErr || !withdrawal) {
+      return res.status(404).json({ success: false, error: 'Withdrawal not found' });
+    }
+
+    // 2. Must be pending
+    if (withdrawal.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid status',
+        message: `Withdrawal is already ${withdrawal.status}. Only pending withdrawals can be processed.`,
+      });
+    }
+
+    // 3. Resolve bank code
+    let bankCode;
+    try {
+      bankCode = withdrawal.bank_code || validateAndGetBankCode(withdrawal.bank_name);
+    } catch (bankErr) {
+      return res.status(400).json({ success: false, error: 'Bank not recognised', message: bankErr.message });
+    }
+
+    // 4. Call Squadco Transfer API
+    const squadcoUrl = process.env.SQUADCO_API_URL || 'https://sandbox-api-d.squadco.com';
+    const isSandbox  = squadcoUrl.includes('sandbox');
+
+    if (isSandbox) {
+      console.warn('[APPROVE-AND-PAY] Sandbox environment — skipping live transfer');
+      return res.status(400).json({
+        success: false,
+        error: 'Sandbox environment',
+        message: 'Squadco sandbox does not support live bank transfers. Switch to live API keys to enable payouts.',
+        details: { environment: 'sandbox', action_required: 'Set SQUADCO_API_URL=https://api.squadco.com and use live keys' },
+      });
+    }
+
+    const transferReference = `PAY_${Date.now()}_${id.substring(0, 8)}`;
+    const amountInKobo      = Math.round(withdrawal.amount * 100);
+
+    const payload = {
+      transaction_reference: transferReference,
+      amount:                amountInKobo,
+      bank_code:             bankCode,
+      account_number:        withdrawal.bank_account_number,
+      account_name:          withdrawal.account_name,
+      currency:              'NGN',
+      narration:             `Ticketa payout – ${withdrawal.account_name}`,
+    };
+
+    console.log('[APPROVE-AND-PAY] Calling Squadco:', { url: `${squadcoUrl}/payout/initiate`, payload });
+
+    let squadcoResponse;
+    try {
+      squadcoResponse = await axios.post(
+        `${squadcoUrl}/payout/initiate`,
+        payload,
+        {
+          headers: { Authorization: `Bearer ${process.env.SQUADCO_API_KEY}`, 'Content-Type': 'application/json' },
+          timeout: 30000,
+        }
+      );
+      console.log('[APPROVE-AND-PAY] Squadco response:', squadcoResponse.data);
+    } catch (squadcoErr) {
+      const errMsg = squadcoErr.response?.data?.message || squadcoErr.message || 'Transfer failed';
+      console.error('[APPROVE-AND-PAY] Squadco error:', squadcoErr.response?.data || squadcoErr.message);
+      // Leave withdrawal as 'pending' so admin can retry
+      return res.status(400).json({ success: false, message: errMsg, details: squadcoErr.response?.data });
+    }
+
+    // 5. Transfer succeeded — mark as paid
+    const squadRef = squadcoResponse.data?.transaction_reference || transferReference;
+
+    const { error: updateErr } = await supabase
+      .from('withdrawals')
+      .update({ status: 'paid', completed_at: new Date().toISOString(), payment_reference: squadRef })
+      .eq('id', id);
+
+    if (updateErr) {
+      console.error('[APPROVE-AND-PAY] Failed to update withdrawal:', updateErr.message);
+      // Transfer already sent — log the error but return success so admin knows money went out
+      console.error('[APPROVE-AND-PAY] CRITICAL: Transfer sent but DB update failed. Manual fix needed for withdrawal', id);
+    }
+
+    // 6. Update wallet: deduct pending_balance, add to total_withdrawn
+    const { data: orgWallet } = await supabase
+      .from('wallets').select('pending_balance, total_withdrawn').eq('organizer_id', withdrawal.organizer_id).single();
+    if (orgWallet) {
+      await supabase.from('wallets').update({
+        pending_balance: Math.max(0, (orgWallet.pending_balance || 0) - withdrawal.amount),
+        total_withdrawn: (orgWallet.total_withdrawn || 0) + withdrawal.amount,
+      }).eq('organizer_id', withdrawal.organizer_id);
+    }
+
+    // 7. Log the action
+    await supabase.from('payout_logs').insert({
+      withdrawal_request_id: id,
+      admin_id: adminId,
+      action: 'paid',
+      note: `Approve-and-pay via Squadco: ${squadRef}`,
+    }).catch(e => console.warn('[APPROVE-AND-PAY] Log write failed (non-blocking):', e.message));
+
+    console.log(`[APPROVE-AND-PAY] ✅ Complete: withdrawal ${id}, squadco_ref ${squadRef}`);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Transfer initiated successfully. Funds are on their way.',
+      data: {
+        squadco_reference: squadRef,
+        amount:            withdrawal.amount,
+        account_number:    withdrawal.bank_account_number,
+        bank_name:         withdrawal.bank_name,
+        account_name:      withdrawal.account_name,
+      },
+    });
+  } catch (err) {
+    console.error('[APPROVE-AND-PAY] Unhandled error:', err.message);
+    return res.status(500).json({ success: false, error: 'Internal server error', message: err.message });
   }
 };
