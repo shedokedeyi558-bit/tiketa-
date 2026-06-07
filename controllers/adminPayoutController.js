@@ -514,36 +514,16 @@ export const payWithdrawalController = async (req, res) => {
     };
 
     console.log(`📤 Calling Squadco Transfer API:`, {
-      url: `${squadcoUrl}/payout/initiate`,
+      url: `${squadcoUrl}/payout/transfer`,
       payload: squadcoPayload,
       amount_ngn: withdrawal.amount,
       amount_kobo: amountInKobo,
     });
 
-    // ✅ CRITICAL: Wrap entire Squadco transfer API call in try/catch
     let squadcoResponse;
     try {
-      // Check if using sandbox environment
-      const isSandbox = squadcoUrl.includes('sandbox');
-      if (isSandbox) {
-        console.warn('⚠️ SANDBOX ENVIRONMENT DETECTED - Bank transfers not supported');
-        console.warn('📌 SQUADCO_API_URL:', squadcoUrl);
-        console.warn('💡 To enable live payouts, switch to live API keys and set SQUADCO_API_URL to https://api.squadco.com');
-        
-        // Return graceful error for sandbox
-        return res.status(400).json({
-          success: false,
-          error: 'Sandbox environment',
-          message: 'Transfer failed: Squadco sandbox does not support live bank transfers. Switch to live API keys to enable payouts.',
-          details: {
-            environment: 'sandbox',
-            action_required: 'Update SQUADCO_API_URL to https://api.squadco.com and use live API keys',
-          },
-        });
-      }
-
       squadcoResponse = await axios.post(
-        `${squadcoUrl}/payout/initiate`,
+        `${squadcoUrl}/payout/transfer`,
         squadcoPayload,
         {
           headers: {
@@ -854,18 +834,6 @@ export const approveAndPayController = async (req, res) => {
 
     // 4. Call Squadco Transfer API
     const squadcoUrl = process.env.SQUADCO_API_URL || 'https://sandbox-api-d.squadco.com';
-    const isSandbox  = squadcoUrl.includes('sandbox');
-
-    if (isSandbox) {
-      console.warn('[APPROVE-AND-PAY] Sandbox environment — skipping live transfer');
-      return res.status(400).json({
-        success: false,
-        error: 'Sandbox environment',
-        message: 'Squadco sandbox does not support live bank transfers. Switch to live API keys to enable payouts.',
-        details: { environment: 'sandbox', action_required: 'Set SQUADCO_API_URL=https://api.squadco.com and use live keys' },
-      });
-    }
-
     const transferReference = `PAY_${Date.now()}_${id.substring(0, 8)}`;
     const amountInKobo      = Math.round(withdrawal.amount * 100);
 
@@ -879,12 +847,12 @@ export const approveAndPayController = async (req, res) => {
       narration:             `Ticketa payout – ${withdrawal.account_name}`,
     };
 
-    console.log('[APPROVE-AND-PAY] Calling Squadco:', { url: `${squadcoUrl}/payout/initiate`, payload });
+    console.log('[APPROVE-AND-PAY] Calling Squadco:', { url: `${squadcoUrl}/payout/transfer`, payload });
 
     let squadcoResponse;
     try {
       squadcoResponse = await axios.post(
-        `${squadcoUrl}/payout/initiate`,
+        `${squadcoUrl}/payout/transfer`,
         payload,
         {
           headers: { Authorization: `Bearer ${process.env.SQUADCO_API_KEY}`, 'Content-Type': 'application/json' },
