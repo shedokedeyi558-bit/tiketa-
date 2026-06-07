@@ -188,6 +188,32 @@ router.get('/checkin', checkinAuth, async (req, res) => {
 
     const alreadyCheckedIn = !!tx.checked_in_at;
 
+    // Fetch all split rows for this reference (TXN_XXX, TXN_XXX_1, TXN_XXX_2 etc.)
+    // Strip any _N suffix to get the base reference
+    const baseRef = tx.reference.replace(/_\d+$/, '');
+    const { data: allRows } = await supabaseAdmin
+      .from('transactions')
+      .select('id, reference, buyer_name, buyer_email, ticket_price, quantity, status, squadco_response')
+      .ilike('reference', `${baseRef}%`)
+      .eq('event_id', eventId)
+      .eq('status', 'success')
+      .order('created_at', { ascending: true });
+
+    const all_transactions = (allRows || []).map(row => {
+      const rowSr = typeof row.squadco_response === 'string'
+        ? (() => { try { return JSON.parse(row.squadco_response); } catch(_) { return {}; } })()
+        : (row.squadco_response || {});
+      return {
+        reference:        row.reference,
+        ticket_type_name: rowSr.tier_name || null,
+        ticket_price:     Number(row.ticket_price || 0),
+        quantity:         row.quantity || 1,
+        buyer_name:       row.buyer_name,
+        buyer_email:      row.buyer_email,
+        status:           row.status,
+      };
+    });
+
     return res.status(200).json({
       success: true,
       data: {
@@ -196,7 +222,7 @@ router.get('/checkin', checkinAuth, async (req, res) => {
         checked_in_at: tx.checked_in_at || null,
         transaction: {
           id: tx.id,
-          reference: tx.reference,
+          reference: baseRef,
           buyer_name: tx.buyer_name,
           buyer_email: tx.buyer_email,
           ticket_type_id: tx.ticket_type_id || sr.tier_id || null,
@@ -204,6 +230,7 @@ router.get('/checkin', checkinAuth, async (req, res) => {
           quantity: tx.quantity || 1,
           status: tx.status,
         },
+        all_transactions,
       },
     });
   } catch (err) {
