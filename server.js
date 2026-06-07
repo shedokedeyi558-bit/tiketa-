@@ -191,10 +191,10 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
         .limit(10),
       supabaseAdmin
         .from('transactions')
-        .select('id, created_at, total_amount, event_id, status')
+        .select('id, reference, created_at, total_amount, event_id, status')
         .eq('status', 'success')
         .order('created_at', { ascending: false })
-        .limit(10),
+        .limit(20),
       supabaseAdmin
         .from('withdrawals')
         .select('id, created_at, amount, status, organizer_id')
@@ -259,19 +259,31 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
       });
     });
 
-    // Transaction activities
-    (recentTransactions || []).forEach(transaction => {
-      const eventTitle = eventTitles[transaction.event_id] || 'an event';
+    // Transaction activities — group split rows by base reference (strip _N suffix)
+    // so multi-ticket purchases (TXN_xxx, TXN_xxx_1, TXN_xxx_2) produce ONE entry
+    const txByBaseRef = new Map();
+    for (const tx of (recentTransactions || [])) {
+      const baseRef = tx.reference ? tx.reference.replace(/_\d+$/, '') : tx.id;
+      if (!txByBaseRef.has(baseRef)) {
+        txByBaseRef.set(baseRef, { ...tx, total_amount: Number(tx.total_amount || 0) });
+      } else {
+        // Add amount from split rows to the primary row's total
+        txByBaseRef.get(baseRef).total_amount += Number(tx.total_amount || 0);
+      }
+    }
+
+    for (const [, tx] of txByBaseRef) {
+      const eventTitle = eventTitles[tx.event_id] || 'an event';
       activities.push({
-        id: `transaction-${transaction.id}`,
+        id: `transaction-${tx.id}`,
         type: 'transaction',
         icon: '💰',
-        message: `Ticket sold for *${eventTitle}* — ₦${parseFloat(transaction.total_amount).toLocaleString('en-NG')}`,
-        timestamp: transaction.created_at,
-        timeAgo: timeAgo(transaction.created_at),
+        message: `Ticket sold for *${eventTitle}* — ₦${parseFloat(tx.total_amount).toLocaleString('en-NG')}`,
+        timestamp: tx.created_at,
+        timeAgo: timeAgo(tx.created_at),
         link: `/admin/sales`,
       });
-    });
+    }
 
     // Withdrawal activities
     (recentWithdrawals || []).forEach(withdrawal => {
