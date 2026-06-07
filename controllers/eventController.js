@@ -372,19 +372,52 @@ export const getEventById = async (req, res) => {
     // ✅ Use image_url for the event flyer/poster
     const image_url = event.image_url || null;
 
-    // ✅ Fetch ticket_types from ticket_types table (if exists, use it; otherwise fall back to JSONB column)
+    // ✅ Fetch ticket_types and calculate per-type available dynamically from transactions
     const { data: ticketTypesRows } = await supabase
       .from('ticket_types')
-      .select('id, name, price, description')
+      .select('id, name, price, description, quantity')
       .eq('event_id', id);
 
+    // Also get sold counts per tier from transactions
+    let soldByTier = {};
     if (ticketTypesRows && ticketTypesRows.length > 0) {
-      event.ticket_types = ticketTypesRows.map(tt => ({
-        id: tt.id,
-        name: tt.name,
-        price: tt.price,
-        description: tt.description || '',
-        available: event.total_tickets - (event.tickets_sold || 0),
+      const { data: tierSales } = await supabase
+        .from('transactions')
+        .select('squadco_response, quantity')
+        .eq('event_id', id)
+        .eq('status', 'success');
+
+      for (const tx of (tierSales || [])) {
+        const sr = typeof tx.squadco_response === 'string'
+          ? (() => { try { return JSON.parse(tx.squadco_response); } catch(_) { return {}; } })()
+          : (tx.squadco_response || {});
+        const tierId = sr.tier_id || null;
+        if (tierId) {
+          soldByTier[tierId] = (soldByTier[tierId] || 0) + (parseInt(tx.quantity) || 1);
+        }
+      }
+    }
+
+    if (ticketTypesRows && ticketTypesRows.length > 0) {
+      event.ticket_types = ticketTypesRows.map(tt => {
+        const capacity = parseInt(tt.quantity) || 0;
+        const sold     = soldByTier[tt.id] || 0;
+        return {
+          id: tt.id,
+          name: tt.name,
+          price: tt.price,
+          description: tt.description || '',
+          quantity: capacity,                      // total capacity for this type
+          available: capacity > 0 ? Math.max(0, capacity - sold) : null, // null = unlimited
+        };
+      });
+    } else if (event.ticket_types && event.ticket_types.length > 0) {
+      // JSONB fallback — use per-type quantity if present, else overall remaining
+      event.ticket_types = event.ticket_types.map(tt => ({
+        ...tt,
+        available: tt.quantity > 0
+          ? Math.max(0, tt.quantity - (soldByTier[tt.id] || 0))
+          : Math.max(0, (event.total_tickets || 0) - (event.tickets_sold || 0)),
       }));
     }
 

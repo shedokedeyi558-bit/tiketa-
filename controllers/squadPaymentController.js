@@ -90,7 +90,7 @@ export const initiatePaymentController = async (req, res) => {
     const { data: event, error: eventError } = await Promise.race([
       supabase
         .from('events')
-        .select('id, title, organizer_id')
+        .select('id, title, organizer_id, ticket_types, total_tickets')
         .eq('id', eventId)
         .single(),
       eventTimeoutPromise
@@ -106,6 +106,56 @@ export const initiatePaymentController = async (req, res) => {
     }
 
     console.log('✅ Step 1 done - Event found:', { id: event.id, title: event.title });
+
+    // ✅ Step 1b: Availability check — validate each cart item against sold counts
+    // This is the backend guard against over-purchasing (bypassing frontend caps)
+    if (cartItems && cartItems.length > 0) {
+      const eventTicketTypes = Array.isArray(event.ticket_types) ? event.ticket_types : [];
+
+      // Fetch sold quantities per tier atomically from transactions
+      const { data: soldRows } = await supabase
+        .from('transactions')
+        .select('squadco_response, quantity')
+        .eq('event_id', eventId)
+        .eq('status', 'success');
+
+      const soldByTier = {};
+      for (const tx of (soldRows || [])) {
+        const sr = typeof tx.squadco_response === 'string'
+          ? (() => { try { return JSON.parse(tx.squadco_response); } catch(_) { return {}; } })()
+          : (tx.squadco_response || {});
+        const tierId = sr.tier_id || null;
+        if (tierId) {
+          soldByTier[tierId] = (soldByTier[tierId] || 0) + (parseInt(tx.quantity) || 1);
+        }
+      }
+
+      for (const item of cartItems) {
+        const tierId   = item.id || item.ticket_type_id || item.ticketTypeId || null;
+        const tierName = item.name || 'Ticket';
+        const reqQty   = parseInt(item.quantity) || 1;
+
+        // Find the ticket type definition
+        const typeDef = eventTicketTypes.find(tt => tt.id === tierId);
+        if (!typeDef) continue; // if type not found in JSONB, skip capacity check
+
+        const capacity = parseInt(typeDef.quantity) || 0;
+        if (capacity === 0) continue; // 0 means unlimited for this type
+
+        const alreadySold = soldByTier[tierId] || 0;
+        const remaining   = capacity - alreadySold;
+
+        if (reqQty > remaining) {
+          console.warn(`❌ Availability check failed: ${tierName} requested=${reqQty} remaining=${remaining}`);
+          return res.status(400).json({
+            success: false,
+            error: 'Tickets unavailable',
+            message: `Not enough tickets available for ${tierName}. Only ${remaining} left.`,
+          });
+        }
+      }
+      console.log('✅ Step 1b done - Availability check passed');
+    }
 
     // 🔑 CRITICAL: Generate reference BEFORE calling Squad
     console.log('⏳ Step 2: Generating reference...');
