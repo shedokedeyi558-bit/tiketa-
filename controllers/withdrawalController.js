@@ -80,7 +80,7 @@ export const getWalletController = async (req, res) => {
 export const createWithdrawalRequestController = async (req, res) => {
   try {
     const userId = req.user?.id;
-    const { amount, bank_name, account_number, account_name } = req.body;
+    const { amount, bank_name, account_number, account_name, bank_code } = req.body;
 
     if (!userId) {
       return res.status(401).json({
@@ -95,6 +95,7 @@ export const createWithdrawalRequestController = async (req, res) => {
       bank_name,
       account_number,
       account_name,
+      bank_code,
     });
 
     // ✅ RULE 1: Validate minimum amount (₦5,000)
@@ -195,6 +196,7 @@ export const createWithdrawalRequestController = async (req, res) => {
       bankName: bank_name,
       accountNumber: account_number,
       accountName: account_name,
+      bankCode: bank_code || null,
     });
 
     if (!requestResult.success) {
@@ -215,6 +217,22 @@ export const createWithdrawalRequestController = async (req, res) => {
         message: requestResult.error,
       });
     }
+
+    // ✅ Persist bank details to profiles for auto-fill on next withdrawal
+    // Fire-and-forget — don't block the response
+    supabase
+      .from('profiles')
+      .update({
+        bank_name:           bank_name        || null,
+        bank_account_number: account_number   || null,
+        account_name:        account_name     || null,
+        bank_code:           bank_code        || null,
+      })
+      .eq('id', userId)
+      .then(({ error }) => {
+        if (error) console.warn('⚠️ Failed to save bank details to profile (non-blocking):', error.message);
+        else console.log('✅ Bank details saved to profile for auto-fill');
+      });
 
     console.log(`✅ Withdrawal request created:`, requestResult.request.id);
 

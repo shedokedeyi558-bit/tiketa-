@@ -481,14 +481,11 @@ export const payWithdrawalController = async (req, res) => {
       });
     }
 
-    // Get bank code
+    // Get bank code — use stored value first, fall back to name lookup
     let bankCode;
     try {
-      bankCode = validateAndGetBankCode(withdrawal.bank_name);
-      console.log(`✅ Bank code resolved:`, {
-        bank_name: withdrawal.bank_name,
-        bank_code: bankCode,
-      });
+      bankCode = withdrawal.bank_code || validateAndGetBankCode(withdrawal.bank_name);
+      console.log(`✅ Bank code resolved:`, { bank_name: withdrawal.bank_name, bank_code: bankCode, source: withdrawal.bank_code ? 'stored' : 'lookup' });
     } catch (bankError) {
       console.error('❌ Bank code error:', {
         bank_name: withdrawal.bank_name,

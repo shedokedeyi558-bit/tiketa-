@@ -117,7 +117,7 @@ export async function createOrganizerWallet(organizerId) {
  */
 export async function createWithdrawalRequest(organizerId, withdrawalData) {
   try {
-    const { amount, bankName, accountNumber, accountName } = withdrawalData;
+    const { amount, bankName, accountNumber, accountName, bankCode } = withdrawalData;
 
     if (!organizerId || !amount || !bankName || !accountNumber || !accountName) {
       console.error('❌ Invalid withdrawal request params');
@@ -138,8 +138,8 @@ export async function createWithdrawalRequest(organizerId, withdrawalData) {
       return { success: false, error: 'Wallet not found' };
     }
 
-    // Get bank code from bank name
-    const bankCode = getBankCode(bankName);
+    // Use provided bank_code if available, fall back to name lookup
+    const resolvedBankCode = bankCode || getBankCode(bankName);
 
     const { data, error } = await supabase
       .from('withdrawals')
@@ -149,7 +149,7 @@ export async function createWithdrawalRequest(organizerId, withdrawalData) {
         amount: parseFloat(amount),
         bank_name: bankName,
         bank_account_number: accountNumber,
-        bank_code: bankCode,
+        bank_code: resolvedBankCode,
         account_name: accountName,
         reference: `WDR_${Date.now()}_${organizerId.slice(0, 8)}`,
         status: 'pending',
