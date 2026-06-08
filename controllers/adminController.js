@@ -807,11 +807,23 @@ export const getDashboardStats = async (req, res) => {
         }
       }
 
-      stats.recentTransactions = recentSuccessTransactions.map(t => {
+      // Group split rows by base reference before building recentTransactions
+      // TXN_xxx and TXN_xxx_1, TXN_xxx_2 should appear as ONE entry with combined amount
+      const txByBaseRef = new Map();
+      for (const t of recentSuccessTransactions) {
+        const baseRef = t.reference ? t.reference.replace(/_\d+$/, '') : t.id;
+        if (!txByBaseRef.has(baseRef)) {
+          txByBaseRef.set(baseRef, { ...t, _totalAmount: Number(t.total_amount || 0) });
+        } else {
+          txByBaseRef.get(baseRef)._totalAmount += Number(t.total_amount || 0);
+        }
+      }
+
+      stats.recentTransactions = [...txByBaseRef.values()].map(t => {
         const displayName = t.buyer_name || t.buyer_email || 'Unknown';
         return {
           id: t.id,
-          reference: t.reference || null,
+          reference: t.reference ? t.reference.replace(/_\d+$/, '') : null,
           buyer_name: displayName,
           event_title: eventMap[t.event_id] || 'Unknown Event',
           event_id: t.event_id,
@@ -820,7 +832,7 @@ export const getDashboardStats = async (req, res) => {
           platform_commission: Number(t.platform_commission || 0),
           squadco_fee: Number(t.squadco_fee || 0),
           organizer_earnings: Number(t.organizer_earnings || 0),
-          amount: Number(t.total_amount || 0),
+          amount: t._totalAmount,
           created_at: t.created_at,
         };
       });
