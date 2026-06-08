@@ -728,7 +728,7 @@ export const getDashboardStats = async (req, res) => {
       supabase.from('withdrawals').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase
         .from('transactions')
-        .select('id, ticket_price, total_amount, processing_fee, platform_commission, squadco_fee, organizer_earnings, buyer_name, event_id, status, created_at')
+        .select('id, reference, ticket_price, total_amount, processing_fee, platform_commission, squadco_fee, organizer_earnings, buyer_name, event_id, status, created_at')
         .order('created_at', { ascending: false })
         .limit(500),
       supabase
@@ -811,6 +811,7 @@ export const getDashboardStats = async (req, res) => {
         const displayName = t.buyer_name || t.buyer_email || 'Unknown';
         return {
           id: t.id,
+          reference: t.reference || null,
           buyer_name: displayName,
           event_title: eventMap[t.event_id] || 'Unknown Event',
           event_id: t.event_id,
