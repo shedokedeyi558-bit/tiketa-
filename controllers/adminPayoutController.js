@@ -501,7 +501,7 @@ export const payWithdrawalController = async (req, res) => {
 
     const squadcoPayload = {
       transaction_reference: transferReference,
-      amount: amountInKobo,
+      amount: String(amountInKobo),   // Squad requires amount as string in kobo
       bank_code: bankCode,
       account_number: withdrawal.bank_account_number,
       account_name: withdrawal.account_name,
@@ -836,7 +836,7 @@ export const approveAndPayController = async (req, res) => {
 
     const payload = {
       transaction_reference: transferReference,
-      amount:                amountInKobo,
+      amount:                String(amountInKobo),  // Squad requires amount as string in kobo
       bank_code:             bankCode,
       account_number:        withdrawal.bank_account_number,
       account_name:          withdrawal.account_name,
