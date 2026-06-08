@@ -499,6 +499,22 @@ export const payWithdrawalController = async (req, res) => {
     const transferReference = `${merchantId}_${withdrawal.id}`;
     const amountInKobo    = Math.round(withdrawal.amount * 100);
 
+    // ✅ Step: Account lookup (required by Squad before transfer)
+    console.log(`🔍 Looking up account before transfer: ${withdrawal.bank_account_number} (${bankCode})`);
+    try {
+      const lookupResponse = await axios.post(
+        `${squadcoUrl}/payout/account/lookup`,
+        { bank_code: bankCode, account_number: withdrawal.bank_account_number },
+        { headers: { Authorization: `Bearer ${process.env.SQUADCO_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 15000 }
+      );
+      const lookedUpName = lookupResponse.data?.data?.account_name;
+      console.log(`✅ Account lookup success: ${lookedUpName}`);
+    } catch (lookupErr) {
+      const lookupErrMsg = lookupErr.response?.data?.message || lookupErr.message || 'Account lookup failed';
+      console.error('❌ Account lookup failed:', lookupErrMsg);
+      return res.status(400).json({ success: false, error: 'Account lookup failed', message: lookupErrMsg });
+    }
+
     const squadcoPayload = {
       transaction_reference: transferReference,
       amount: String(amountInKobo),   // Squad requires amount as string in kobo
@@ -833,6 +849,21 @@ export const approveAndPayController = async (req, res) => {
     const merchantId    = process.env.SQUAD_MERCHANT_ID || 'SBS3U9LRZR';
     const transferReference = `${merchantId}_${id}`;
     const amountInKobo  = Math.round(withdrawal.amount * 100);
+
+    // ✅ Account lookup (required by Squad before transfer)
+    console.log(`[APPROVE-AND-PAY] Looking up account: ${withdrawal.bank_account_number} (${bankCode})`);
+    try {
+      const lookupRes = await axios.post(
+        `${squadcoUrl}/payout/account/lookup`,
+        { bank_code: bankCode, account_number: withdrawal.bank_account_number },
+        { headers: { Authorization: `Bearer ${process.env.SQUADCO_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 15000 }
+      );
+      console.log(`[APPROVE-AND-PAY] Account lookup success:`, lookupRes.data?.data?.account_name);
+    } catch (lookupErr) {
+      const lookupErrMsg = lookupErr.response?.data?.message || lookupErr.message || 'Account lookup failed';
+      console.error('[APPROVE-AND-PAY] Account lookup failed:', lookupErrMsg);
+      return res.status(400).json({ success: false, error: 'Account lookup failed', message: lookupErrMsg });
+    }
 
     const payload = {
       transaction_reference: transferReference,
