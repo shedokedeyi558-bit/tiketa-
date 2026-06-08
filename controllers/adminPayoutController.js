@@ -1,70 +1,65 @@
 import axios from 'axios';
 import { supabase } from '../utils/supabaseClient.js';
+import { createClient } from '@supabase/supabase-js';
 import { validateAndGetBankCode } from '../utils/bankCodes.js';
+
+// ✅ Explicit service-role client — bypasses RLS on all payout queries
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 /**
  * GET /api/v1/admin/payouts/withdrawals
- * Fetch all withdrawal requests with organizer info
+ * Fetch all withdrawal requests with organizer info and bank details
  * Admin only
  */
 export const getWithdrawalsController = async (req, res) => {
   try {
-    // 🔑 CRITICAL: Fetch withdrawals first
-    const { data: withdrawals, error } = await supabase
+    // Use supabaseAdmin (service role) to bypass any RLS on withdrawals table
+    const { data: withdrawals, error } = await supabaseAdmin
       .from('withdrawals')
-      .select('*')
+      .select('id, organizer_id, amount, status, bank_name, bank_account_number, account_name, bank_code, reference, requested_at, processed_at, completed_at, payment_reference, failure_reason')
       .order('requested_at', { ascending: false });
 
     if (error) {
-      console.error('❌ Failed to fetch withdrawals:', {
-        message: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint,
-        status: error.status,
-      });
+      console.error('❌ Failed to fetch withdrawals:', error.message);
       return res.status(500).json({
         success: false,
         error: 'Failed to fetch withdrawals',
         message: error.message,
-        details: error.details,
       });
     }
 
-    // 🔑 CRITICAL: Fetch organizer profiles separately
+    console.log(`✅ Withdrawals fetched: ${withdrawals?.length || 0}`);
+
+    // Fetch organizer profiles in one batch query
     const organizerIds = [...new Set((withdrawals || []).map(w => w.organizer_id).filter(Boolean))];
     let profileMap = {};
     if (organizerIds.length > 0) {
-      const { data: profiles, error: profilesError } = await supabase
+      const { data: profiles } = await supabaseAdmin
         .from('profiles')
         .select('id, full_name, email')
         .in('id', organizerIds);
-      if (!profilesError && profiles) {
-        profiles.forEach(p => { profileMap[p.id] = p; });
-      }
+      (profiles || []).forEach(p => { profileMap[p.id] = p; });
     }
 
-    // 🔑 CRITICAL: Map withdrawals to include organizer info at top level
-    const enrichedWithdrawals = (withdrawals || []).map((w) => {
-      const organizerData = profileMap[w.organizer_id];
-      
-      return {
-        ...w,
-        organizer_name: organizerData?.full_name || 'Unknown',
-        organizer_email: organizerData?.email || 'Unknown',
-      };
-    });
+    const enrichedWithdrawals = (withdrawals || []).map((w) => ({
+      ...w,
+      organizer_name:  profileMap[w.organizer_id]?.full_name || 'Unknown',
+      organizer_email: profileMap[w.organizer_id]?.email    || 'Unknown',
+      profiles: {
+        name:  profileMap[w.organizer_id]?.full_name || 'Unknown',
+        email: profileMap[w.organizer_id]?.email    || 'Unknown',
+      },
+    }));
 
     return res.status(200).json({
       success: true,
       data: enrichedWithdrawals,
     });
   } catch (error) {
-    console.error('❌ Get Withdrawals Error:', {
-      message: error.message,
-      stack: error.stack,
-      timestamp: new Date().toISOString(),
-    });
+    console.error('❌ Get Withdrawals Error:', error.message);
     return res.status(500).json({
       success: false,
       error: 'Internal server error',
