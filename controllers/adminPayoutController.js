@@ -504,8 +504,8 @@ export const payWithdrawalController = async (req, res) => {
       bank_code: bankCode,
       account_number: withdrawal.bank_account_number,
       account_name: withdrawal.account_name,
-      currency: 'NGN',
-      narration: `Ticketa payout - ${withdrawal.account_name}`,
+      currency_id: 'NGN',
+      remark: `Organizer payout - Ticketa`,
     };
 
     console.log(`📤 Calling Squadco Transfer API:`, {
@@ -838,8 +838,8 @@ export const approveAndPayController = async (req, res) => {
       bank_code:             bankCode,
       account_number:        withdrawal.bank_account_number,
       account_name:          withdrawal.account_name,
-      currency:              'NGN',
-      narration:             `Ticketa payout – ${withdrawal.account_name}`,
+      currency_id:           'NGN',
+      remark:                `Organizer payout - Ticketa`,
     };
 
     console.log('[APPROVE-AND-PAY] Calling Squadco:', { url: `${squadcoUrl}/payout/transfer`, payload });
