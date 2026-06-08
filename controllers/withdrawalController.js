@@ -108,30 +108,45 @@ export const createWithdrawalRequestController = async (req, res) => {
       });
     }
 
-    // ✅ RULE 2: Check sufficient balance
-    const walletResult = await getOrganizerWallet(userId);
-    if (!walletResult.success) {
-      console.error('❌ Failed to fetch wallet:', walletResult.error);
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to fetch wallet',
-        message: walletResult.error,
-      });
-    }
+    // ✅ RULE 2: Check sufficient balance — calculate dynamically from transactions
+    // (same logic as organizer stats endpoint — wallet table may be stale)
+    const { createClient: createClientForBalance } = await import('@supabase/supabase-js');
+    const supabaseForBalance = createClientForBalance(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
 
-    const wallet = walletResult.wallet;
-    if (!wallet || wallet.available_balance < amount) {
-      const availableBalance = wallet?.available_balance || 0;
-      console.warn('❌ Insufficient balance:', {
-        requested: amount,
-        available: availableBalance,
-      });
+    const { data: txRows } = await supabaseForBalance
+      .from('transactions')
+      .select('organizer_earnings')
+      .eq('organizer_id', userId)
+      .eq('status', 'success');
+
+    const totalEarned = (txRows || []).reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0);
+
+    const { data: withdrawalRows } = await supabaseForBalance
+      .from('withdrawals')
+      .select('amount, status')
+      .eq('organizer_id', userId)
+      .in('status', ['pending', 'approved', 'paid']);
+
+    const totalWithdrawn = (withdrawalRows || []).reduce((sum, w) => sum + Number(w.amount || 0), 0);
+    const dynamicAvailableBalance = totalEarned - totalWithdrawn;
+
+    console.log(`💰 Dynamic balance check: earned=₦${totalEarned}, withdrawn=₦${totalWithdrawn}, available=₦${dynamicAvailableBalance}, requested=₦${amount}`);
+
+    if (dynamicAvailableBalance < amount) {
+      console.warn('❌ Insufficient balance:', { requested: amount, available: dynamicAvailableBalance });
       return res.status(400).json({
         success: false,
         error: 'Insufficient balance',
-        message: 'Insufficient wallet balance',
+        message: `Insufficient balance. Available: ₦${dynamicAvailableBalance.toLocaleString('en-NG')}`,
       });
     }
+
+    // Also fetch wallet for the deduction step below
+    const walletResult = await getOrganizerWallet(userId);
+    const wallet = walletResult.wallet;
 
     // ✅ RULE 3: Check withdrawal days (Monday–Friday WAT only)
     // WAT = UTC+1
@@ -167,14 +182,12 @@ export const createWithdrawalRequestController = async (req, res) => {
       }
     }
 
-    // ✅ All rules passed: Deduct from available_balance and add to pending_balance
-    console.log(`💰 Deducting ₦${amount} from available balance...`);
-
+    // ✅ Deduct from wallet — use dynamic balance to avoid stale value issues
     const { error: updateError } = await supabase
       .from('wallets')
       .update({
-        available_balance: wallet.available_balance - amount,
-        pending_balance: wallet.pending_balance + amount,
+        available_balance: Math.max(0, dynamicAvailableBalance - amount),
+        pending_balance: ((wallet?.pending_balance || 0) + amount),
         last_updated: new Date().toISOString(),
       })
       .eq('organizer_id', userId);
