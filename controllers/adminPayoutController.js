@@ -494,9 +494,10 @@ export const payWithdrawalController = async (req, res) => {
     }
 
     // Call Squadco Transfer API
-    const squadcoUrl = process.env.SQUADCO_API_URL || 'https://sandbox-api-d.squadco.com';
-    const transferReference = `PAY_${Date.now()}_${withdrawal.id.substring(0, 8)}`;
-    const amountInKobo = Math.round(withdrawal.amount * 100);
+    const squadcoUrl      = process.env.SQUADCO_API_URL || 'https://sandbox-api-d.squadco.com';
+    const merchantId      = process.env.SQUAD_MERCHANT_ID || 'SBS3U9LRZR';
+    const transferReference = `${merchantId}_${withdrawal.id}`;
+    const amountInKobo    = Math.round(withdrawal.amount * 100);
 
     const squadcoPayload = {
       transaction_reference: transferReference,
@@ -828,9 +829,10 @@ export const approveAndPayController = async (req, res) => {
     }
 
     // 4. Call Squadco Transfer API
-    const squadcoUrl = process.env.SQUADCO_API_URL || 'https://sandbox-api-d.squadco.com';
-    const transferReference = `PAY_${Date.now()}_${id.substring(0, 8)}`;
-    const amountInKobo      = Math.round(withdrawal.amount * 100);
+    const squadcoUrl    = process.env.SQUADCO_API_URL || 'https://sandbox-api-d.squadco.com';
+    const merchantId    = process.env.SQUAD_MERCHANT_ID || 'SBS3U9LRZR';
+    const transferReference = `${merchantId}_${id}`;
+    const amountInKobo  = Math.round(withdrawal.amount * 100);
 
     const payload = {
       transaction_reference: transferReference,
