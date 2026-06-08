@@ -471,13 +471,20 @@ router.get('/past-events', verifyToken, async (req, res) => {
           acc[t.event_id].count += qty;
           acc[t.event_id].revenue += Number(t.organizer_earnings || 0);
 
-          // Accumulate sold count per tier
+          // Accumulate sold count per tier — key by both tier_id AND tier_name
+          // tier_id from squadco_response is a frontend string ID
+          // ticket_types table uses UUIDs — they often don't match, so also key by name
           const sr = typeof t.squadco_response === 'string'
             ? (() => { try { return JSON.parse(t.squadco_response); } catch(_) { return {}; } })()
             : (t.squadco_response || {});
-          const tierId = sr.tier_id || null;
+          const tierId   = sr.tier_id   || null;
+          const tierName = sr.tier_name || null;
           if (tierId) {
             acc[t.event_id].byTier[tierId] = (acc[t.event_id].byTier[tierId] || 0) + qty;
+          }
+          if (tierName) {
+            acc[t.event_id].byTierName = acc[t.event_id].byTierName || {};
+            acc[t.event_id].byTierName[tierName] = (acc[t.event_id].byTierName[tierName] || 0) + qty;
           }
           return acc;
         }, {});
@@ -503,15 +510,22 @@ router.get('/past-events', verifyToken, async (req, res) => {
       for (const eventId of eventIds) {
         const rows = (ticketTypeRows || []).filter(tt => tt.event_id === eventId);
         const source = rows.length > 0 ? rows : (jsonbMap[eventId] || []);
-        const byTier = transactionMap[eventId]?.byTier || {};
+        const byTier     = transactionMap[eventId]?.byTier     || {};
+        const byTierName = transactionMap[eventId]?.byTierName || {};
 
-        ticketTypesMap[eventId] = source.map(tt => ({
-          id: tt.id || null,
-          name: tt.name || 'Ticket',
-          price: Number(tt.price || 0),
-          quantity: Number(tt.quantity || 0),         // total capacity
-          quantity_sold: byTier[tt.id] || 0,          // sold for this tier
-        }));
+        ticketTypesMap[eventId] = source.map(tt => {
+          // Try matching by tier_id first, then by name as fallback
+          const soldById   = byTier[tt.id]          || 0;
+          const soldByName = byTierName[tt.name]     || 0;
+          const quantitySold = soldById || soldByName;
+          return {
+            id:            tt.id   || null,
+            name:          tt.name || 'Ticket',
+            price:         Number(tt.price    || 0),
+            quantity:      Number(tt.quantity || 0),  // total capacity
+            quantity_sold: quantitySold,               // dynamic from transactions
+          };
+        });
       }
     }
 
