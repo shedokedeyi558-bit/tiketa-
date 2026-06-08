@@ -1667,7 +1667,7 @@ export const getMonthlyEarnings = async (req, res) => {
     // Fetch all successful transactions in the date range
     const { data: transactions, error: txError } = await supabaseAdmin
       .from('transactions')
-      .select('id, buyer_name, buyer_email, event_id, total_amount, platform_commission, created_at')
+      .select('id, reference, buyer_name, buyer_email, event_id, total_amount, platform_commission, created_at')
       .eq('status', 'success')
       .gte('created_at', from)
       .lt('created_at', to)
@@ -1701,6 +1701,7 @@ export const getMonthlyEarnings = async (req, res) => {
 
     const shaped = rows.map(t => ({
       id: t.id,
+      reference: t.reference || null,
       buyer_name: t.buyer_name,
       buyer_email: t.buyer_email,
       event_title: eventMap[t.event_id] || 'Unknown Event',
