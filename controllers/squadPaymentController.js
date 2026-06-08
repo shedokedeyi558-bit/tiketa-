@@ -890,12 +890,11 @@ export const verifyPaymentController = async (req, res) => {
     }
 
     // 🔑 Fetch all rows for this reference (per-type split rows)
-    // eventData already has title/date/location from the early fetch above — reuse it
+    // Use both reference prefix match AND direct ID lookup via perTypeTxIds for reliability
     const allRowsResult = await supabase
       .from('transactions')
       .select('id, reference, buyer_email, buyer_name, total_amount, ticket_price, processing_fee, platform_commission, organizer_earnings, quantity, status, created_at, verified_at, squadco_response')
-      .ilike('reference', `${transaction.reference}%`)
-      .eq('status', 'success')
+      .in('id', perTypeTxIds.length > 1 ? perTypeTxIds : [transaction.id])
       .order('created_at', { ascending: true });
 
     const allRows = (allRowsResult.data || []).map(row => {
