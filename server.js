@@ -46,6 +46,7 @@ import adminRoutes from './routes/adminRoutes.js';
 import { updateExpiredEvents } from './services/eventExpiryService.js';
 import { adminAuth } from './middlewares/adminMiddleware.js';
 import { createClient } from '@supabase/supabase-js';
+import { paymentLimiter, authLimiter, generalLimiter } from './middlewares/rateLimiters.js';
 
 // Create admin client for server-side operations
 const supabaseAdmin = createClient(
@@ -122,6 +123,19 @@ app.use(morgan('combined'));
 app.use((req, res, next) => {
   next();
 });
+
+// ── Rate Limiting ─────────────────────────────────────────────────────────────
+// General catch-all: 100 req / IP / minute (applied first so specific limiters
+// below can further tighten individual routes)
+app.use(generalLimiter);
+
+// Auth endpoints: 10 req / IP / 15 min
+app.use(`/api/${process.env.API_VERSION}/auth/signup`, authLimiter);
+app.use(`/api/${process.env.API_VERSION}/auth/login`, authLimiter);
+
+// Payment initiate: 5 req / IP / 10 min
+app.use(`/api/${process.env.API_VERSION}/payments/squad/initiate`, paymentLimiter);
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Health check endpoint (keep-alive ping)
 app.get('/api/health', (req, res) => {

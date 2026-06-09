@@ -138,6 +138,34 @@ export const initiatePaymentController = async (req, res) => {
       console.log('✅ Step 1b done - Availability check passed');
     }
 
+    // ── Step 1c: Non-blocking fraud detection ────────────────────────────────
+    // Flags are written AFTER the transaction is created (reference is needed).
+    // We pre-calculate the checks here so we know what to flag later.
+    const cartTotalNaira = cartItems && cartItems.length > 0
+      ? cartItems.reduce((acc, item) => acc + (parseFloat(item.price || item.ticket_price || 0) * (parseInt(item.quantity) || 1)), 0)
+      : (amount || 0);
+
+    const HIGH_VALUE_THRESHOLD = 500000; // ₦500,000
+    const isHighValue = cartTotalNaira > HIGH_VALUE_THRESHOLD;
+
+    // Check rapid repeat purchases (same email + event in last 30 min)
+    let rapidRepeatCount = 0;
+    try {
+      const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      const { count } = await supabase
+        .from('transactions')
+        .select('id', { count: 'exact', head: true })
+        .eq('buyer_email', buyerEmail)
+        .eq('event_id', eventId)
+        .eq('status', 'success')
+        .gte('created_at', thirtyMinAgo);
+      rapidRepeatCount = count || 0;
+    } catch (_) {}
+
+    const isRapidRepeat = rapidRepeatCount > 3;
+    console.log(`[FRAUD] isHighValue=${isHighValue} (₦${cartTotalNaira}), isRapidRepeat=${isRapidRepeat} (${rapidRepeatCount} purchases in 30min)`);
+    // ─────────────────────────────────────────────────────────────────────────
+
     // 🔑 CRITICAL: Generate reference BEFORE calling Squad
     console.log('⏳ Step 2: Generating reference...');
     const reference = normalizeReference(`TXN_${Date.now()}_${uuidv4()}`);
@@ -247,6 +275,38 @@ export const initiatePaymentController = async (req, res) => {
       event_id: transaction.event_id,
       status: transaction.status,
     });
+
+    // ── Step 3b: Write fraud flags (fire-and-forget, never blocks the purchase) ─
+    if (isHighValue || isRapidRepeat) {
+      (async () => {
+        try {
+          const flags = [];
+          if (isHighValue) {
+            flags.push({
+              transaction_reference: reference,
+              buyer_email: buyerEmail,
+              event_id: eventId,
+              amount: cartTotalNaira,
+              flag_reason: `High value purchase: ₦${cartTotalNaira.toLocaleString('en-NG')}`,
+            });
+          }
+          if (isRapidRepeat) {
+            flags.push({
+              transaction_reference: reference,
+              buyer_email: buyerEmail,
+              event_id: eventId,
+              amount: cartTotalNaira,
+              flag_reason: `Rapid repeat purchase: ${rapidRepeatCount} purchases in 30 minutes`,
+            });
+          }
+          await supabase.from('fraud_flags').insert(flags);
+          console.log(`[FRAUD] Flagged transaction ${reference}: ${flags.map(f => f.flag_reason).join('; ')}`);
+        } catch (flagErr) {
+          console.error('[FRAUD] Failed to write fraud flag (non-blocking):', flagErr.message);
+        }
+      })();
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     // Call Squad payment service
     console.log('⏳ Step 4: Calling Squad API with reference:', reference);

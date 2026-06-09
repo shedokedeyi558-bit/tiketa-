@@ -33,6 +33,7 @@ import walletRoutes from '../routes/walletRoutes.js';
 import withdrawalRoutes from '../routes/withdrawalRoutes.js';
 import orderRoutes from '../routes/orderRoutes.js';
 import adminRoutes from '../routes/adminRoutes.js';
+import { paymentLimiter, authLimiter, generalLimiter } from '../middlewares/rateLimiters.js';
 
 // Initialize express app
 const app = express();
@@ -99,6 +100,18 @@ app.use((req, res, next) => {
   console.log(`   User-Agent: ${req.headers['user-agent']?.substring(0, 50) || 'none'}`);
   next();
 });
+
+// ── Rate Limiting ─────────────────────────────────────────────────────────────
+// General catch-all: 100 req / IP / minute
+app.use(generalLimiter);
+
+// Auth endpoints: 10 req / IP / 15 min
+app.use(`/api/${apiVersion}/auth/signup`, authLimiter);
+app.use(`/api/${apiVersion}/auth/login`, authLimiter);
+
+// Payment initiate: 5 req / IP / 10 min
+app.use(`/api/${apiVersion}/payments/squad/initiate`, paymentLimiter);
+// ─────────────────────────────────────────────────────────────────────────────
 
 // API Routes
 const apiVersion = process.env.API_VERSION || 'v1';

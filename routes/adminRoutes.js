@@ -26,6 +26,8 @@ import {
   getWalletIntegrity,
   fixWalletIntegrity,
   resendTransactionEmail,
+  getFraudFlags,
+  reviewFraudFlag,
 } from '../controllers/adminController.js';
 import {
   getWithdrawalsController,
@@ -96,6 +98,10 @@ router.post('/wallet-integrity/fix', fixWalletIntegrity);
 
 // Resend confirmation email to buyer
 router.post('/transactions/:reference/resend-email', resendTransactionEmail);
+
+// Fraud detection flags
+router.get('/fraud-flags', getFraudFlags);
+router.patch('/fraud-flags/:id/review', reviewFraudFlag);
 
 // Payout management
 router.get('/payouts/withdrawals', getWithdrawalsController);

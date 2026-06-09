@@ -2367,3 +2367,42 @@ export const resendTransactionEmail = async (req, res) => {
     return res.status(500).json({ success: false, error: err.message });
   }
 };
+
+// ✅ GET /api/v1/admin/fraud-flags
+// Returns all unreviewed fraud flags, newest first.
+export const getFraudFlags = async (req, res) => {
+  try {
+    const showAll = req.query.all === 'true'; // ?all=true returns reviewed ones too
+    let query = supabaseAdmin
+      .from('fraud_flags')
+      .select('id, transaction_reference, buyer_email, event_id, amount, flag_reason, flagged_at, reviewed')
+      .order('flagged_at', { ascending: false })
+      .limit(200);
+
+    if (!showAll) query = query.eq('reviewed', false);
+
+    const { data, error } = await query;
+    if (error) return res.status(500).json({ success: false, error: error.message });
+
+    return res.status(200).json({ success: true, data: data || [], count: (data || []).length });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// ✅ PATCH /api/v1/admin/fraud-flags/:id/review
+// Marks a fraud flag as reviewed.
+export const reviewFraudFlag = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { error } = await supabaseAdmin
+      .from('fraud_flags')
+      .update({ reviewed: true })
+      .eq('id', id);
+
+    if (error) return res.status(500).json({ success: false, error: error.message });
+    return res.status(200).json({ success: true, message: 'Fraud flag marked as reviewed' });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
