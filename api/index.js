@@ -43,7 +43,9 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
   'https://ticketa-topaz.vercel.app',
-  'https://tiketa-alpha.vercel.app'
+  'https://tiketa-alpha.vercel.app',
+  'https://ticketa.org',
+  'https://www.ticketa.org',
 ];
 
 console.log('🔐 CORS Configuration (Vercel):');
