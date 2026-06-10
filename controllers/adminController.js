@@ -192,7 +192,7 @@ export const approveEvent = async (req, res) => {
       .from('events')
       .select('id, title, organizer_id')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
     if (fetchError || !event) {
       clearTimeout(timeoutId);
@@ -205,7 +205,7 @@ export const approveEvent = async (req, res) => {
       .update({ status: 'active' })
       .eq('id', id)
       .select('id, title, status')
-      .single();
+      .maybeSingle();
 
     if (updateError) {
       clearTimeout(timeoutId);
@@ -286,12 +286,12 @@ export const rejectEvent = async (req, res) => {
 
     console.log(`❌ Rejecting event ${id}...`);
 
-    // ✅ Fetch only needed fields
-    const { data: event, error: fetchError } = await supabase
+    // ✅ Fetch only needed fields — use supabaseAdmin to bypass RLS
+    const { data: event, error: fetchError } = await supabaseAdmin
       .from('events')
       .select('id, title, organizer_id')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
     if (fetchError || !event) {
       clearTimeout(timeoutId);
@@ -299,7 +299,7 @@ export const rejectEvent = async (req, res) => {
     }
 
     // ✅ DB update first
-    const { data: updatedEvent, error: updateError } = await supabase
+    const { data: updatedEvent, error: updateError } = await supabaseAdmin
       .from('events')
       .update({
         status: 'rejected',
@@ -307,7 +307,7 @@ export const rejectEvent = async (req, res) => {
       })
       .eq('id', id)
       .select('id, title, status, rejection_reason')
-      .single();
+      .maybeSingle();
 
     if (updateError) {
       clearTimeout(timeoutId);
@@ -386,7 +386,7 @@ export const createAdminEvent = async (req, res) => {
         .select('id, role')
         .eq('id', organizer_id)
         .eq('role', 'organizer')
-        .single();
+        .maybeSingle();
 
       if (orgError || !organizer) {
         console.error('❌ Organizer not found:', {
