@@ -236,25 +236,38 @@ export const approveEvent = async (req, res) => {
         let orgName = 'Organizer';
 
         // Try profiles first (fast)
-        const { data: profile } = await supabaseAdmin
+        const { data: profile, error: profileErr } = await supabaseAdmin
           .from('profiles')
           .select('full_name, email')
           .eq('id', event.organizer_id)
           .single();
 
+        console.log(`[APPROVE EMAIL] organizer_id=${event.organizer_id} profile.email="${profile?.email}" profileErr=${profileErr?.message || 'none'}`);
+
         if (profile?.email) {
           orgEmail = profile.email;
           orgName = profile.full_name || 'Organizer';
         } else {
-          // Fallback to auth.users only if profiles has no email
-          const { data: { user: authUser } } = await supabaseAdmin.auth.admin.getUserById(event.organizer_id);
-          orgEmail = authUser?.email || '';
+          // Fallback to auth.users — always works for Google OAuth
+          console.log('[APPROVE EMAIL] profiles.email empty/null — falling back to auth.users');
+          try {
+            const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.getUserById(event.organizer_id);
+            console.log(`[APPROVE EMAIL] auth.users email="${authData?.user?.email}" authErr=${authErr?.message || 'none'}`);
+            orgEmail = authData?.user?.email || '';
+            orgName = profile?.full_name || authData?.user?.user_metadata?.full_name || 'Organizer';
+          } catch (authCallErr) {
+            console.error('[APPROVE EMAIL] auth.admin.getUserById threw:', authCallErr.message);
+          }
         }
+
+        console.log(`[APPROVE EMAIL] Final orgEmail="${orgEmail}" orgName="${orgName}"`);
 
         if (orgEmail) {
           const { sendEventApprovedEmail } = await import('../services/emailService.js');
           await sendEventApprovedEmail(orgEmail, orgName, event.title);
           console.log('✅ Approval email sent to organizer (background)');
+        } else {
+          console.warn('[APPROVE EMAIL] ⚠️ No email found for organizer — notification not sent');
         }
       } catch (bgErr) {
         console.error('⚠️ Background approval email failed (non-blocking):', bgErr.message);
@@ -331,24 +344,37 @@ export const rejectEvent = async (req, res) => {
         let orgEmail = '';
         let orgName = 'Organizer';
 
-        const { data: profile } = await supabaseAdmin
+        const { data: profile, error: profileErr } = await supabaseAdmin
           .from('profiles')
           .select('full_name, email')
           .eq('id', event.organizer_id)
           .single();
 
+        console.log(`[REJECT EMAIL] organizer_id=${event.organizer_id} profile.email="${profile?.email}" profileErr=${profileErr?.message || 'none'}`);
+
         if (profile?.email) {
           orgEmail = profile.email;
           orgName = profile.full_name || 'Organizer';
         } else {
-          const { data: { user: authUser } } = await supabaseAdmin.auth.admin.getUserById(event.organizer_id);
-          orgEmail = authUser?.email || '';
+          console.log('[REJECT EMAIL] profiles.email empty/null — falling back to auth.users');
+          try {
+            const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.getUserById(event.organizer_id);
+            console.log(`[REJECT EMAIL] auth.users email="${authData?.user?.email}" authErr=${authErr?.message || 'none'}`);
+            orgEmail = authData?.user?.email || '';
+            orgName = profile?.full_name || authData?.user?.user_metadata?.full_name || 'Organizer';
+          } catch (authCallErr) {
+            console.error('[REJECT EMAIL] auth.admin.getUserById threw:', authCallErr.message);
+          }
         }
+
+        console.log(`[REJECT EMAIL] Final orgEmail="${orgEmail}" orgName="${orgName}"`);
 
         if (orgEmail) {
           const { sendEventRejectedEmail } = await import('../services/emailService.js');
           await sendEventRejectedEmail(orgEmail, orgName, event.title, rejection_reason || 'No reason provided');
           console.log('✅ Rejection email sent to organizer (background)');
+        } else {
+          console.warn('[REJECT EMAIL] ⚠️ No email found for organizer — notification not sent');
         }
       } catch (bgErr) {
         console.error('⚠️ Background rejection email failed (non-blocking):', bgErr.message);
