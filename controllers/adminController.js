@@ -230,8 +230,10 @@ export const approveEvent = async (req, res) => {
     });
 
     // ✅ Fire-and-forget: fetch organizer email and send notification AFTER response
+    console.log(`[APPROVE EMAIL] Starting background email task for event ${id}, organizer ${event.organizer_id}`);
     (async () => {
       try {
+        console.log(`[APPROVE EMAIL] Background task running for organizer ${event.organizer_id}`);
         let orgEmail = '';
         let orgName = 'Organizer';
 
