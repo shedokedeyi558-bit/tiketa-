@@ -569,9 +569,9 @@ export const createEvent = async (req, res) => {
       .from('profiles')
       .upsert({
         id: organizerId,
-        email: req.user?.email || '',
+        email: req.user?.email || null,
         role: 'organizer',
-        full_name: req.user?.user_metadata?.full_name || '',
+        full_name: req.user?.name || req.user?.user_metadata?.full_name || '',
         updated_at: new Date().toISOString(),
       }, { onConflict: 'id' });
 
