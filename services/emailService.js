@@ -8,6 +8,17 @@ const transporter = nodemailer.createTransport({
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASSWORD,
   },
+  connectionTimeout: 10000, // 10s — fail fast instead of hanging forever
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
+});
+
+// Warm-up check on startup (non-blocking)
+transporter.verify().then(() => {
+  console.log('✅ Email transporter verified — SMTP connection OK');
+}).catch((err) => {
+  console.error('❌ Email transporter FAILED verification:', err.message, err.code);
+  console.error('   Check EMAIL_USER and EMAIL_PASSWORD env vars, and that the Gmail App Password is valid');
 });
 
 /**
@@ -290,7 +301,7 @@ export const sendEventApprovedEmail = async (organizerEmail, organizerName, even
     console.log('✅ Event approved email sent:', result.messageId);
     return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error('❌ Error sending event approved email:', error);
+    console.error('❌ Error sending event approved email — code:', error.code, 'message:', error.message);
     return { success: false, error: error.message };
   }
 };
