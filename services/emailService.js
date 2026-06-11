@@ -178,24 +178,52 @@ export const sendTicketDetailsEmail = async (transaction, event, tickets) => {
 
 /**
  * Get organizer email from database
+ * Tries profiles table first, falls back to Supabase auth (covers Google OAuth users
+ * whose email may only be in auth.users, not profiles)
  */
 export const getOrganizerEmail = async (organizerId) => {
   try {
     console.log('🔍 Fetching organizer email for ID:', organizerId);
 
-    const { data: user, error } = await supabase
+    // 1. Try profiles table first (fastest path)
+    const { data: profile } = await supabase
       .from('profiles')
       .select('email, full_name')
       .eq('id', organizerId)
       .single();
 
-    if (error) {
-      console.error('❌ Error fetching organizer:', error);
+    if (profile?.email) {
+      console.log('✅ Organizer email from profiles:', profile.email);
+      return { email: profile.email, full_name: profile.full_name };
+    }
+
+    // 2. Fallback: fetch from Supabase auth (covers Google OAuth users)
+    console.warn('⚠️ No email in profiles for organizer, trying auth.users...');
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabaseAdmin = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+    const { data: { user: authUser }, error: authErr } = await supabaseAdmin.auth.admin.getUserById(organizerId);
+
+    if (authErr || !authUser?.email) {
+      console.error('❌ Could not find email in auth.users either:', authErr?.message);
       return null;
     }
 
-    console.log('✅ Organizer found:', user.email);
-    return user;
+    console.log('✅ Organizer email from auth.users:', authUser.email);
+
+    // Back-fill profiles.email so future lookups hit the fast path
+    await supabase
+      .from('profiles')
+      .update({ email: authUser.email })
+      .eq('id', organizerId)
+      .then(({ error }) => {
+        if (error) console.warn('⚠️ Back-fill profiles.email failed (non-blocking):', error.message);
+        else console.log('✅ Back-filled profiles.email for organizer', organizerId);
+      });
+
+    return { email: authUser.email, full_name: profile?.full_name || authUser.user_metadata?.full_name || '' };
   } catch (error) {
     console.error('❌ Error getting organizer email:', error);
     return null;
