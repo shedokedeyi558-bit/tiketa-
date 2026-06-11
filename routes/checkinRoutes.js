@@ -29,8 +29,11 @@ const supabaseAdmin = createClient(
 const checkinAuth = async (req, res, next) => {
   const { eventId } = req.params;
 
-  // Try checkin_token first (from query or body)
-  const token = req.query.checkin_token || req.body?.checkin_token;
+  // Accept token from: query param, body, OR x-checkin-token header
+  const token = req.query.checkin_token
+    || req.body?.checkin_token
+    || req.headers['x-checkin-token'];
+
   if (token) {
     const stored = checkinTokenStore.get(token);
     if (!stored) {
@@ -309,6 +312,63 @@ router.post('/checkin', checkinAuth, async (req, res) => {
     });
   } catch (err) {
     console.error('❌ POST checkin error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// GET /api/v1/organizer/events/:eventId/checkin-stats
+// Returns check-in statistics for this event
+// Auth: organizer JWT OR valid checkin_token (via x-checkin-token header)
+// ─────────────────────────────────────────────────────────────
+router.get('/checkin-stats', checkinAuth, async (req, res) => {
+  try {
+    const { eventId } = req.params;
+
+    // Total tickets sold (unique base references × their quantities)
+    const { data: soldRows } = await supabaseAdmin
+      .from('transactions')
+      .select('reference, quantity')
+      .eq('event_id', eventId)
+      .eq('status', 'success');
+
+    // Group by base reference to count purchases (not split rows)
+    const baseRefsSeen = new Set();
+    let totalTickets = 0;
+    for (const row of (soldRows || [])) {
+      const base = row.reference.replace(/_\d+$/, '');
+      if (!baseRefsSeen.has(base)) {
+        baseRefsSeen.add(base);
+        totalTickets += parseInt(row.quantity) || 1;
+      }
+    }
+
+    // Checked-in count — primary rows that have checked_in_at set
+    const { data: checkedInRows } = await supabaseAdmin
+      .from('transactions')
+      .select('reference, checked_in_at')
+      .eq('event_id', eventId)
+      .eq('status', 'success')
+      .not('checked_in_at', 'is', null);
+
+    // Group by base reference to count unique check-ins
+    const checkedInRefs = new Set();
+    for (const row of (checkedInRows || [])) {
+      checkedInRefs.add(row.reference.replace(/_\d+$/, ''));
+    }
+    const checkedInCount = checkedInRefs.size;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        total_tickets: totalTickets,
+        checked_in:    checkedInCount,
+        remaining:     Math.max(0, totalTickets - checkedInCount),
+        event_id:      eventId,
+      },
+    });
+  } catch (err) {
+    console.error('❌ checkin-stats error:', err);
     return res.status(500).json({ success: false, error: err.message });
   }
 });
