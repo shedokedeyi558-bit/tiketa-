@@ -1,18 +1,14 @@
 import nodemailer from 'nodemailer';
 import { supabase } from '../utils/supabaseClient.js';
+import { Resend } from 'resend';
 
 // ─── Email transport ──────────────────────────────────────────────────────────
 // Prefer Resend (HTTPS API — works on Render free tier, no SMTP port blocking)
 // Fall back to nodemailer/Gmail SMTP if RESEND_API_KEY is not set
 let resendClient = null;
 if (process.env.RESEND_API_KEY) {
-  try {
-    const { Resend } = await import('resend');
-    resendClient = new Resend(process.env.RESEND_API_KEY);
-    console.log('✅ Email transport: Resend (HTTPS API)');
-  } catch (e) {
-    console.error('❌ Failed to initialise Resend client:', e.message);
-  }
+  resendClient = new Resend(process.env.RESEND_API_KEY);
+  console.log('✅ Email transport: Resend (HTTPS API)');
 }
 
 // Nodemailer transporter (Gmail SMTP fallback)
