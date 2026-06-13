@@ -37,16 +37,18 @@ if (!resendClient) {
 /**
  * Internal helper — sends via Resend if available, else Gmail SMTP
  */
-async function sendEmail({ to, subject, html, from }) {
-  const fromAddr = from || process.env.EMAIL_FROM || `"Ticketa" <${process.env.EMAIL_USER}>`;
+async function sendEmail({ to, subject, html }) {
+  const fromAddr = process.env.EMAIL_FROM || 'Ticketa <noreply@ticketa.org>';
 
   if (resendClient) {
     const { data, error } = await resendClient.emails.send({ from: fromAddr, to, subject, html });
     if (error) throw new Error(error.message);
+    console.log(`✅ [Resend] Email sent to ${to} — id: ${data?.id}`);
     return { messageId: data?.id };
   }
 
   const info = await transporter.sendMail({ from: fromAddr, to, subject, html });
+  console.log(`✅ [SMTP] Email sent to ${to} — id: ${info.messageId}`);
   return { messageId: info.messageId };
 }
 
