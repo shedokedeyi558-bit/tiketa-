@@ -1,25 +1,58 @@
 import nodemailer from 'nodemailer';
 import { supabase } from '../utils/supabaseClient.js';
 
-// Initialize email transporter
+// ─── Email transport ──────────────────────────────────────────────────────────
+// Prefer Resend (HTTPS API — works on Render free tier, no SMTP port blocking)
+// Fall back to nodemailer/Gmail SMTP if RESEND_API_KEY is not set
+let resendClient = null;
+if (process.env.RESEND_API_KEY) {
+  try {
+    const { Resend } = await import('resend');
+    resendClient = new Resend(process.env.RESEND_API_KEY);
+    console.log('✅ Email transport: Resend (HTTPS API)');
+  } catch (e) {
+    console.error('❌ Failed to initialise Resend client:', e.message);
+  }
+}
+
+// Nodemailer transporter (Gmail SMTP fallback)
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASSWORD,
   },
-  connectionTimeout: 10000, // 10s — fail fast instead of hanging forever
+  connectionTimeout: 10000,
   greetingTimeout: 10000,
   socketTimeout: 15000,
 });
 
-// Warm-up check on startup (non-blocking)
-transporter.verify().then(() => {
-  console.log('✅ Email transporter verified — SMTP connection OK');
-}).catch((err) => {
-  console.error('❌ Email transporter FAILED verification:', err.message, err.code);
-  console.error('   Check EMAIL_USER and EMAIL_PASSWORD env vars, and that the Gmail App Password is valid');
-});
+if (!resendClient) {
+  console.log('⚠️ RESEND_API_KEY not set — using Gmail SMTP (may be blocked on Render)');
+  // Warm-up check (non-blocking)
+  transporter.verify().then(() => {
+    console.log('✅ Email transporter verified — SMTP connection OK');
+  }).catch((err) => {
+    console.error('❌ Email transporter FAILED verification:', err.message, err.code);
+    console.error('   Set RESEND_API_KEY to fix email delivery on Render');
+  });
+}
+
+/**
+ * Internal helper — sends via Resend if available, else Gmail SMTP
+ */
+async function sendEmail({ to, subject, html, from }) {
+  const fromAddr = from || process.env.EMAIL_FROM || `"Ticketa" <${process.env.EMAIL_USER}>`;
+
+  if (resendClient) {
+    const { data, error } = await resendClient.emails.send({ from: fromAddr, to, subject, html });
+    if (error) throw new Error(error.message);
+    return { messageId: data?.id };
+  }
+
+  const info = await transporter.sendMail({ from: fromAddr, to, subject, html });
+  return { messageId: info.messageId };
+}
 
 /**
  * Send buyer confirmation email
@@ -297,7 +330,7 @@ export const sendEventApprovedEmail = async (organizerEmail, organizerName, even
       html: emailContent,
     };
 
-    const result = await transporter.sendMail(mailOptions);
+    const result = await sendEmail({ to: organizerEmail, subject: `Event Approved - ${eventTitle}`, html: emailContent });
     console.log('✅ Event approved email sent:', result.messageId);
     return { success: true, messageId: result.messageId };
   } catch (error) {
@@ -346,7 +379,7 @@ export const sendEventRejectedEmail = async (organizerEmail, organizerName, even
       html: emailContent,
     };
 
-    const result = await transporter.sendMail(mailOptions);
+    const result = await sendEmail({ to: organizerEmail, subject: `Event Submission Update - ${eventTitle}`, html: emailContent });
     console.log('✅ Event rejected email sent:', result.messageId);
     return { success: true, messageId: result.messageId };
   } catch (error) {
@@ -487,7 +520,7 @@ export const sendTicketPurchaseConfirmation = async ({ buyerName, buyerEmail, re
       html,
     };
 
-    const result = await transporter.sendMail(mailOptions);
+    const result = await sendEmail({ to: buyerEmail, subject: `Your tickets for ${eventTitle} are confirmed 🎟`, html });
     console.log('✅ Ticketa confirmation email sent:', result.messageId);
     return { success: true, messageId: result.messageId };
   } catch (error) {
