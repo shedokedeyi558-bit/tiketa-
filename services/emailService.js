@@ -60,7 +60,7 @@ export const sendBuyerConfirmationEmail = async (transaction, event) => {
   try {
     console.log('📧 Sending buyer confirmation email to:', transaction.buyer_email);
 
-    const emailContent = `
+    const html = `
       <h2>Purchase Confirmation</h2>
       <p>Hi ${transaction.buyer_name},</p>
       
@@ -83,14 +83,11 @@ export const sendBuyerConfirmationEmail = async (transaction, event) => {
       <p>Best regards,<br/>Ticketa Team</p>
     `;
 
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
+    const result = await sendEmail({
       to: transaction.buyer_email,
       subject: `Ticket Purchase Confirmation - ${event.title}`,
-      html: emailContent,
-    };
-
-    const result = await transporter.sendMail(mailOptions);
+      html,
+    });
     console.log('✅ Buyer confirmation email sent:', result.messageId);
     return { success: true, messageId: result.messageId };
   } catch (error) {
@@ -107,7 +104,7 @@ export const sendOrganizerNotificationEmail = async (transaction, event, organiz
   try {
     console.log('📧 Sending organizer notification email to:', organizerEmail);
 
-    const emailContent = `
+    const html = `
       <h2>New Ticket Sold!</h2>
       <p>Great news! Someone just purchased a ticket to your event.</p>
       
@@ -137,14 +134,11 @@ export const sendOrganizerNotificationEmail = async (transaction, event, organiz
       <p>Best regards,<br/>Ticketa Team</p>
     `;
 
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
+    const result = await sendEmail({
       to: organizerEmail,
       subject: `New ticket sold — ${event.title}`,
-      html: emailContent,
-    };
-
-    const result = await transporter.sendMail(mailOptions);
+      html,
+    });
     console.log('✅ Organizer notification email sent:', result.messageId);
     return { success: true, messageId: result.messageId };
   } catch (error) {
@@ -202,14 +196,11 @@ export const sendTicketDetailsEmail = async (transaction, event, tickets) => {
       <p>Best regards,<br/>Ticketa Team</p>
     `;
 
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
+    const result = await sendEmail({
       to: transaction.buyer_email,
       subject: `Your Tickets for ${event.title}`,
       html: emailContent,
-    };
-
-    const result = await transporter.sendMail(mailOptions);
+    });
     console.log('✅ Ticket details email sent:', result.messageId);
     return { success: true, messageId: result.messageId };
   } catch (error) {
@@ -321,13 +312,6 @@ export const sendEventApprovedEmail = async (organizerEmail, organizerName, even
       <p>Best regards,<br/>Ticketa Team</p>
     `;
 
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: organizerEmail,
-      subject: `Event Approved - ${eventTitle}`,
-      html: emailContent,
-    };
-
     const result = await sendEmail({ to: organizerEmail, subject: `Event Approved - ${eventTitle}`, html: emailContent });
     console.log('✅ Event approved email sent:', result.messageId);
     return { success: true, messageId: result.messageId };
@@ -369,13 +353,6 @@ export const sendEventRejectedEmail = async (organizerEmail, organizerName, even
       
       <p>Best regards,<br/>Ticketa Team</p>
     `;
-
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: organizerEmail,
-      subject: `Event Submission Update - ${eventTitle}`,
-      html: emailContent,
-    };
 
     const result = await sendEmail({ to: organizerEmail, subject: `Event Submission Update - ${eventTitle}`, html: emailContent });
     console.log('✅ Event rejected email sent:', result.messageId);
