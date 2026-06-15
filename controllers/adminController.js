@@ -20,7 +20,7 @@ export const getAdminEvents = async (req, res) => {
     // ✅ Fetch all events — narrow select, limit rows
     const { data: events, error: eventsError } = await supabase
       .from('events')
-      .select('id, title, organizer_id, date, location, status, category, image_url, total_tickets, tickets_sold, created_at')
+      .select('id, title, organizer_id, date, end_date, end_time, start_time, location, status, category, image_url, total_tickets, tickets_sold, created_at')
       .order('date', { ascending: false })
       .limit(100);
 
@@ -82,6 +82,9 @@ export const getAdminEvents = async (req, res) => {
         organizer_name: organizerMap[event.organizer_id]?.full_name || organizerMap[event.organizer_id]?.email?.split('@')[0] || 'Unknown',
         organizer_email: organizerMap[event.organizer_id]?.email || '',
         date: event.date,
+        end_date: event.end_date || null,
+        start_time: event.start_time || null,
+        end_time: event.end_time || null,
         location: event.location,
         status: event.status, // ✅ Now includes auto-expired events
         status_badge: event.status.charAt(0).toUpperCase() + event.status.slice(1), // Capitalize first letter
@@ -1499,7 +1502,7 @@ export const getAdminOrganizerById = async (req, res) => {
 
     const { data: events } = await supabase
       .from('events')
-      .select('id, title, date, status, total_tickets, tickets_sold')
+      .select('id, title, date, end_date, end_time, status, total_tickets, tickets_sold')
       .eq('organizer_id', id)
       .order('created_at', { ascending: false });
 
