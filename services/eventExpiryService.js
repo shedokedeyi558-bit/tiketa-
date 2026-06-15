@@ -71,12 +71,14 @@ export const updateExpiredEvents = async () => {
 
     for (const event of eventsToCheck) {
       try {
-        // Use end_date if available, otherwise fall back to date
-        const expiryDateStr = event.end_date || event.date;
-        if (!expiryDateStr) continue;
-        
-        // Extract date part from end_date (take only YYYY-MM-DD)
-        const datePart = (event.end_date || event.date || '').split('T')[0];
+        if (!event.date) continue;
+
+        // ✅ Use end_date for multi-day events — only if it exists AND differs from start date
+        // Nostalgia ultra: date=2026-06-13, end_date=2026-06-14 → must use Jun 14 not Jun 13
+        const startDatePart = (event.date || '').split('T')[0];
+        const endDatePart   = event.end_date ? event.end_date.split('T')[0] : null;
+        const datePart = (endDatePart && endDatePart !== startDatePart) ? endDatePart : startDatePart;
+
         // Extract time part from end_time
         const timePart = event.end_time || '23:59:59';
         // Combine into full datetime string
