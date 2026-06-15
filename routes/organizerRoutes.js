@@ -436,7 +436,7 @@ router.get('/past-events', verifyToken, async (req, res) => {
     // Get all ended or cancelled events for this organizer
     const { data: events, error: evError } = await supabase
       .from('events')
-      .select('id, title, date, start_time, end_time, total_tickets')
+      .select('id, title, date, end_date, start_time, end_time, total_tickets')
       .eq('organizer_id', organizerId)
       .in('status', ['ended', 'cancelled'])
       .order('date', { ascending: false });
@@ -534,8 +534,9 @@ router.get('/past-events', verifyToken, async (req, res) => {
       id: e.id,
       title: e.title,
       date: e.date,
-      start_time: e.start_time,
-      end_time: e.end_time,
+      end_date: e.end_date || null,
+      start_time: e.start_time || null,
+      end_time: e.end_time || null,
       total_tickets: Number(e.total_tickets || 0),
       tickets_sold: transactionMap[e.id]?.count || 0,
       total_revenue: Number((transactionMap[e.id]?.revenue || 0).toFixed(2)),
