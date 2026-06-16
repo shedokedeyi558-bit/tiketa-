@@ -46,18 +46,12 @@ export const adminAuth = async (req, res, next) => {
       });
     }
 
-    console.log('✅ Token verified for user:', {
-      userId: data.user.id,
-      email: data.user.email,
-    });
+    console.log('✅ Token verified for user: %s', data.user.id);
 
     // Check if user is admin
     const userIsAdmin = await isAdmin(data.user.id);
     
-    console.log('🔍 Admin check result:', {
-      userId: data.user.id,
-      isAdmin: userIsAdmin,
-    });
+    console.log('🔍 Admin check result: isAdmin=%s', userIsAdmin);
     
     if (!userIsAdmin) {
       console.warn('❌ User is not admin:', data.user.id);

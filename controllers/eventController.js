@@ -317,13 +317,6 @@ export const getEventById = async (req, res) => {
     }
 
     console.log('✅ Event found:', event.title);
-    console.log('🕐 Raw event data from DB:', {
-      id: event.id,
-      title: event.title,
-      date: event.date,
-      start_time: event.start_time,
-      end_time: event.end_time,
-    });
 
     // ✅ Check if event should be visible to public
     // Hide cancelled and rejected events - show active, pending, and ended
@@ -362,11 +355,6 @@ export const getEventById = async (req, res) => {
       // Calculate remaining tickets, never go below 0
       displayTotalTickets = totalTickets;
       displayTicketsRemaining = Math.max(0, totalTickets - ticketsSold);
-      console.log('🎫 Ticket calculation:', {
-        total: totalTickets,
-        sold: ticketsSold,
-        remaining: displayTicketsRemaining,
-      });
     }
 
     // ✅ Use image_url for the event flyer/poster
@@ -513,19 +501,6 @@ export const getEventById = async (req, res) => {
 export const createEvent = async (req, res) => {
   try {
     const organizerId = req.user?.id;
-    
-    // 🔍 DEBUG: Log the complete request body to see what frontend is sending
-    console.log('📋 FULL REQUEST BODY RECEIVED:', JSON.stringify(req.body, null, 2));
-    console.log('📋 REQUEST BODY KEYS:', Object.keys(req.body));
-    console.log('📋 IMAGE-RELATED FIELDS:', {
-      image_url: req.body.image_url,
-      image_base64: req.body.image_base64,
-      imageUrl: req.body.imageUrl,
-      flyer_url: req.body.flyer_url,
-      flyerUrl: req.body.flyerUrl,
-      media_url: req.body.media_url,
-      mediaUrl: req.body.mediaUrl,
-    });
     
     const { title, description, date, end_date, location, total_tickets, category, image_url, image_base64, ticket_types, require_attendee_names } = req.body;
 
@@ -675,23 +650,6 @@ export const createEvent = async (req, res) => {
 
     // ✅ Create event with validated organizer_id - status set to 'pending' for admin approval
     console.log('📝 Inserting event into database...');
-    console.log('📝 IMAGE_URL VALUE BEING SAVED:', finalImageUrl);
-    console.log('📝 TICKET_TYPES VALUE BEING SAVED:', JSON.stringify(ticket_types, null, 2));
-    console.log('📝 TOTAL_TICKETS VALUE BEING SAVED:', total_tickets);
-    console.log('📝 EVENT DATA BEING INSERTED:', {
-      title,
-      description: description || '',
-      date,
-      end_date: end_date || date,
-      location,
-      organizer_id: organizerId,
-      total_tickets: total_tickets || 0,
-      tickets_sold: 0,
-      status: 'pending',
-      category: category || 'General',
-      image_url: finalImageUrl,
-      ticket_types: ticket_types || [],
-    });
 
     // ✅ Validate end date/time is after start date/time
     if (start_time && (end_date || end_time)) {
@@ -849,17 +807,13 @@ export const getEventStats = async (req, res) => {
     });
 
     // Get all transactions for this event
-    console.log('🔍 Querying transactions for event_id:', id);
-    console.log('🔍 DEBUG - Event ID type:', typeof id, 'Value:', id);
     const { data: allTransactions, error: txError } = await supabase
       .from('transactions')
       .select('*')
       .eq('event_id', id)
       .eq('status', 'success');
 
-    console.log('📊 All transactions for event:', allTransactions?.length ?? 0);
-    console.log('🔍 DEBUG - Query error:', txError);
-    console.log('🔍 DEBUG - Raw transaction data:', JSON.stringify(allTransactions, null, 2));
+    console.log('📊 Transactions for event: %s', allTransactions?.length ?? 0);
     
     if (txError) {
       console.error('❌ Error fetching transactions:', txError);
@@ -869,38 +823,15 @@ export const getEventStats = async (req, res) => {
         message: txError.message,
       });
     }
-    
-    if (allTransactions && allTransactions.length > 0) {
-      console.log('📋 Transaction details:');
-      allTransactions.forEach((tx, idx) => {
-        console.log(`  [${idx}] ID: ${tx.id}, Status: ${tx.status}, Ticket Price: ${tx.ticket_price}, Platform Commission: ${tx.platform_commission}, Organizer Earnings: ${tx.organizer_earnings}`);
-      });
-    }
 
-    // All transactions are already filtered by status='success' in the query above
     const successfulTransactions = allTransactions ?? [];
-    console.log('✅ Successful transactions:', successfulTransactions.length);
 
     // ✅ Calculate stats with correct business logic
     // Gross Revenue = sum of ticket_price (NOT total_amount which includes ₦100 buyer fee)
     const grossRevenue = successfulTransactions.reduce((sum, t) => sum + Number(t.ticket_price || 0), 0);
-    
-    // Platform Fee = sum of platform_commission (already calculated as 3% of ticket_price in DB)
     const platformFee = successfulTransactions.reduce((sum, t) => sum + Number(t.platform_commission || 0), 0);
-    
-    // Net Earnings = Gross Revenue - Platform Fee (should match sum of organizer_earnings)
     const netEarnings = grossRevenue - platformFee;
-    
-    // Verify against stored organizer_earnings
     const storedOrganizerEarnings = successfulTransactions.reduce((sum, t) => sum + Number(t.organizer_earnings || 0), 0);
-
-    console.log('💰 Revenue breakdown:', {
-      grossRevenue,
-      platformFee,
-      netEarnings,
-      storedOrganizerEarnings,
-      match: Math.abs(netEarnings - storedOrganizerEarnings) < 0.01, // Allow for rounding
-    });
 
     // Get tickets for this event
     const { data: tickets, error: ticketError } = await supabase
@@ -910,12 +841,6 @@ export const getEventStats = async (req, res) => {
 
     if (ticketError) {
       console.warn('⚠️ Error fetching tickets:', ticketError);
-    } else {
-      console.log('🎫 Tickets for event:', tickets?.length ?? 0);
-      if (tickets && tickets.length > 0) {
-        const totalTicketsQuantity = tickets.reduce((sum, t) => sum + Number(t.quantity || 0), 0);
-        console.log('📊 Total ticket quantity:', totalTicketsQuantity);
-      }
     }
 
     const stats = {

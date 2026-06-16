@@ -130,18 +130,10 @@ export const approveWithdrawalController = async (req, res) => {
       });
     }
 
-    console.log('✅ Withdrawal found:', {
-      id: withdrawal.id,
-      status: withdrawal.status,
-      amount: withdrawal.amount,
-      organizer_id: withdrawal.organizer_id,
-    });
+    console.log('✅ Withdrawal found: id=%s status=%s', withdrawal.id, withdrawal.status);
 
     if (withdrawal.status !== 'pending') {
-      console.warn('❌ Withdrawal is not pending:', {
-        withdrawalId: id,
-        currentStatus: withdrawal.status,
-      });
+      console.warn('❌ Withdrawal not pending (approve), current: %s', withdrawal.status);
       return res.status(400).json({
         success: false,
         error: 'Invalid status',
@@ -303,18 +295,10 @@ export const rejectWithdrawalController = async (req, res) => {
       });
     }
 
-    console.log('✅ Withdrawal found:', {
-      id: withdrawal.id,
-      status: withdrawal.status,
-      amount: withdrawal.amount,
-      organizer_id: withdrawal.organizer_id,
-    });
+    console.log('✅ Withdrawal found: id=%s status=%s', withdrawal.id, withdrawal.status);
 
     if (withdrawal.status !== 'pending') {
-      console.warn('❌ Withdrawal is not pending:', {
-        withdrawalId: id,
-        currentStatus: withdrawal.status,
-      });
+      console.warn('❌ Withdrawal not pending (reject), current: %s', withdrawal.status);
       return res.status(400).json({
         success: false,
         error: 'Invalid status',
@@ -458,14 +442,7 @@ export const payWithdrawalController = async (req, res) => {
       });
     }
 
-    console.log('✅ Withdrawal found:', {
-      id: withdrawal.id,
-      status: withdrawal.status,
-      amount: withdrawal.amount,
-      bank_name: withdrawal.bank_name,
-      account_number: withdrawal.bank_account_number,
-      account_name: withdrawal.account_name,
-    });
+    console.log('✅ Withdrawal found: id=%s status=%s amount=₦%s', withdrawal.id, withdrawal.status, withdrawal.amount);
 
     if (withdrawal.status !== 'processing') {
       console.warn('❌ Withdrawal is not processing:', withdrawal.status);
@@ -525,12 +502,7 @@ export const payWithdrawalController = async (req, res) => {
       remark: `Organizer payout - Ticketa`,
     };
 
-    console.log(`📤 Calling Squadco Transfer API:`, {
-      url: `${squadcoUrl}/payout/transfer`,
-      payload: squadcoPayload,
-      amount_ngn: withdrawal.amount,
-      amount_kobo: amountInKobo,
-    });
+    console.log(`📤 Calling Squadco Transfer API for ₦%s`, withdrawal.amount);
 
     let squadcoResponse;
     try {
@@ -546,26 +518,14 @@ export const payWithdrawalController = async (req, res) => {
         }
       );
 
-      console.log('✅ Squadco Transfer API response:', {
-        status: squadcoResponse.status,
-        data: squadcoResponse.data,
-        reference: squadcoResponse.data?.transaction_reference,
-      });
+      console.log('✅ Squadco Transfer API responded: status=%s', squadcoResponse.status);
     } catch (squadcoError) {
       // ✅ Log exact error message
       const errorMessage = squadcoError.response?.data?.message || 
                           squadcoError.message || 
                           'Failed to process payout with Squadco';
       
-      console.error('❌ Squadco Transfer API error:', {
-        status: squadcoError.response?.status,
-        statusText: squadcoError.response?.statusText,
-        data: squadcoError.response?.data,
-        message: squadcoError.message,
-        url: squadcoError.config?.url,
-        payload: squadcoError.config?.data,
-        errorMessage: errorMessage,
-      });
+      console.error('❌ Squadco Transfer API error: status=%s message=%s', squadcoError.response?.status, squadcoError.message);
 
       // ✅ Always return proper JSON response - never let it crash
       return res.status(502).json({
@@ -689,8 +649,6 @@ export const getRecentOrganizersController = async (req, res) => {
 
     const enriched = (organizers || []).map((org) => {
       const wallet = org.wallets?.[0];
-      console.log(`📊 Organizer ${org.full_name}: wallet=${wallet ? 'found' : 'not found'}, balance=${wallet?.available_balance || 0}, earned=${wallet?.total_earned || 0}`);
-      
       return {
         id: org.id,
         name: org.full_name,
@@ -875,7 +833,7 @@ export const approveAndPayController = async (req, res) => {
       remark:                `Organizer payout - Ticketa`,
     };
 
-    console.log('[APPROVE-AND-PAY] Calling Squadco:', { url: `${squadcoUrl}/payout/transfer`, payload });
+    console.log('[APPROVE-AND-PAY] Calling Squadco transfer for ₦%s', withdrawal.amount);
 
     let squadcoResponse;
     try {
@@ -887,7 +845,7 @@ export const approveAndPayController = async (req, res) => {
           timeout: 30000,
         }
       );
-      console.log('[APPROVE-AND-PAY] Squadco response:', squadcoResponse.data);
+      console.log('[APPROVE-AND-PAY] Squadco transfer succeeded');
     } catch (squadcoErr) {
       const errMsg = squadcoErr.response?.data?.message || squadcoErr.message || 'Transfer failed';
       console.error('[APPROVE-AND-PAY] Squadco error:', squadcoErr.response?.data || squadcoErr.message);

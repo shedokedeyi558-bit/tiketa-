@@ -20,11 +20,7 @@ if (missingEnvVars.length > 0) {
   process.exit(1);
 }
 
-console.log('✅ Environment variables loaded:');
-console.log('   - SQUADCO_API_KEY:', process.env.SQUADCO_API_KEY?.substring(0, 20) + '...');
-console.log('   - SQUADCO_PUBLIC_KEY:', process.env.SQUADCO_PUBLIC_KEY?.substring(0, 10) + '...');
-console.log('   - SQUADCO_API_URL:', process.env.SQUADCO_API_URL || 'https://api.squadco.com (default)');
-console.log('   - SUPABASE_URL:', process.env.SUPABASE_URL?.substring(0, 20) + '...');
+console.log('✅ Environment variables loaded');
 
 // Get __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -74,8 +70,7 @@ const allowedOrigins = [
   'https://www.ticketa.org',
 ];
 
-console.log('🔐 CORS Configuration:');
-console.log('   Allowed Origins:', allowedOrigins);
+console.log('🔐 CORS enabled');
 
 // CORS middleware with detailed logging
 app.use(cors({
@@ -327,25 +322,7 @@ app.get('/api/v1/admin/activity', adminAuth, async (req, res) => {
   }
 });
 
-// DEBUG: Log all registered routes
-console.log('🔍 REGISTERED ROUTES:');
-app._router.stack.forEach(function(r){
-  if (r.route && r.route.path){
-    console.log(`   ${r.route.stack[0].method.toUpperCase()} ${r.route.path}`);
-  } else if (r.name === 'router') {
-    const basePath = r.regexp.source.replace(/\\\//g, '/').replace(/\$.*/, '').replace(/^\^/, '');
-    console.log(`   ROUTER: ${basePath}`);
-    if (r.handle && r.handle.stack) {
-      r.handle.stack.forEach(function(nestedRoute){
-        if (nestedRoute.route){
-          const method = nestedRoute.route.stack[0].method.toUpperCase();
-          const path = nestedRoute.route.path;
-          console.log(`     ${method} ${basePath}${path}`);
-        }
-      });
-    }
-  }
-});
+// Routes registered
 
 // Health check endpoint
 app.get('/health', (req, res) => {

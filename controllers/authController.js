@@ -34,7 +34,7 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
       });
     }
 
-    console.log('📝 Starting signup for:', { email, role, fullName });
+    console.log('📝 Starting signup for role:', role);
 
     // ✅ Sign up with Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -58,7 +58,7 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
       });
     }
 
-    console.log('✅ Auth user created:', authData.user.id);
+    console.log('✅ Auth user created');
 
     // ✅ Manual fallback: Upsert to profiles in case trigger fails
     console.log('📝 Manual profile upsert as fallback...');
@@ -74,12 +74,6 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
 
     // ✅ CRITICAL: Write to profiles table using service role
     console.log('📝 Creating profile record...');
-    console.log('📝 Profile data:', {
-      id: authData.user.id,
-      email,
-      full_name: fullName,
-      role,
-    });
     const { data: userProfile, error: userError } = await supabaseAdmin
       .from('profiles')
       .upsert({
@@ -106,11 +100,11 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
       });
     }
 
-    console.log('✅ Profile record created:', userProfile.id);
+    console.log('✅ Profile record created');
 
     // ✅ Auto-create wallet for organizers
     if (role === 'organizer') {
-      console.log(`⏳ Creating wallet for new organizer: ${authData.user.id}`);
+      console.log('⏳ Creating wallet for new organizer...');
       
       try {
         const walletResult = await createOrganizerWallet(authData.user.id);
@@ -119,7 +113,7 @@ export const signUpOrganizerOrAdmin = async (req, res) => {
           console.error('⚠️ Failed to create organizer wallet:', walletResult.error);
           // Don't fail signup if wallet creation fails - it can be created later
         } else {
-          console.log(`✅ Wallet created for organizer: ${authData.user.id}`);
+          console.log('✅ Wallet created for organizer');
         }
       } catch (walletError) {
         console.error('⚠️ Wallet creation error:', walletError);

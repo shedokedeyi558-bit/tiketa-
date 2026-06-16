@@ -90,13 +90,7 @@ export const createWithdrawalRequestController = async (req, res) => {
       });
     }
 
-    console.log(`📝 Creating withdrawal request for organizer: ${userId}`, {
-      amount,
-      bank_name,
-      account_number,
-      account_name,
-      bank_code,
-    });
+    console.log('📝 Creating withdrawal request...');
 
     // ✅ RULE 1: Validate minimum amount (₦5,000)
     if (!amount || amount < 5000) {
@@ -133,7 +127,7 @@ export const createWithdrawalRequestController = async (req, res) => {
     const totalWithdrawn = (withdrawalRows || []).reduce((sum, w) => sum + Number(w.amount || 0), 0);
     const dynamicAvailableBalance = totalEarned - totalWithdrawn;
 
-    console.log(`💰 Dynamic balance check: earned=₦${totalEarned}, withdrawn=₦${totalWithdrawn}, available=₦${dynamicAvailableBalance}, requested=₦${amount}`);
+    console.log('💰 Balance check: available=₦%s requested=₦%s', dynamicAvailableBalance, amount);
 
     if (dynamicAvailableBalance < amount) {
       console.warn('❌ Insufficient balance:', { requested: amount, available: dynamicAvailableBalance });
@@ -247,7 +241,7 @@ export const createWithdrawalRequestController = async (req, res) => {
         else console.log('✅ Bank details saved to profile for auto-fill');
       });
 
-    console.log(`✅ Withdrawal request created:`, requestResult.request.id);
+    console.log('✅ Withdrawal request created: %s', requestResult.request.id);
 
     return res.status(201).json({
       success: true,

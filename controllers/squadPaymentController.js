@@ -21,22 +21,11 @@ import { creditOrganizerWallet } from '../services/walletService.js';
  */
 export const initiatePaymentController = async (req, res) => {
   console.log('🚀 [SQUAD PAYMENT] Initiate payment handler called');
-  console.log('📨 Request origin:', req.headers.origin);
-  console.log('📨 Request method:', req.method);
-  console.log('📨 Request body:', req.body);
   
   try {
     const { eventId, cartItems, attendees, buyerEmail, buyerName, amount, callbackUrl } = req.body;
 
-    // 🔑 CRITICAL: Log incoming request
-    console.log('📥 REQUEST BODY:', req.body);
-    console.log('🎯 EVENT ID RECEIVED:', eventId);
-    console.log('💰 AMOUNT RECEIVED FROM FRONTEND:', amount);
-    console.log('🛒 CART ITEMS RECEIVED:', JSON.stringify(cartItems));
-
-    // 🔑 CRITICAL: Validate eventId is present
     if (!eventId) {
-      console.error('❌ Missing eventId in request:', req.body);
       return res.status(400).json({
         success: false,
         error: 'eventId is required',
@@ -44,9 +33,7 @@ export const initiatePaymentController = async (req, res) => {
       });
     }
 
-    // Validate required fields
     if (!amount || !buyerEmail || !callbackUrl) {
-      console.error('❌ Missing required fields:', { amount, buyerEmail, callbackUrl });
       return res.status(400).json({
         success: false,
         error: 'Missing required fields: amount, buyerEmail, callbackUrl',
@@ -70,16 +57,10 @@ export const initiatePaymentController = async (req, res) => {
       });
     }
 
-    console.log('🔄 Payment Initiation Request:', {
-      eventId,
-      amount,
-      buyerEmail,
-      callbackUrl,
-      timestamp: new Date().toISOString(),
-    });
+    console.log('🔄 Payment Initiation Request: eventId=%s amount=%s', eventId, amount);
 
     // 🔑 CRITICAL: Verify event exists with timeout
-    console.log('⏳ Step 1: Looking up event with ID:', eventId);
+    console.log('⏳ Step 1: Looking up event...');
     
     // Create timeout promise
     const eventTimeoutPromise = new Promise((_, reject) =>
@@ -163,7 +144,7 @@ export const initiatePaymentController = async (req, res) => {
     } catch (_) {}
 
     const isRapidRepeat = rapidRepeatCount > 3;
-    console.log(`[FRAUD] isHighValue=${isHighValue} (₦${cartTotalNaira}), isRapidRepeat=${isRapidRepeat} (${rapidRepeatCount} purchases in 30min)`);
+    console.log('[FRAUD] isHighValue=%s isRapidRepeat=%s', isHighValue, isRapidRepeat);
     // ─────────────────────────────────────────────────────────────────────────
 
     // 🔑 CRITICAL: Generate reference BEFORE calling Squad
@@ -193,12 +174,6 @@ export const initiatePaymentController = async (req, res) => {
         }, 0)
       : 0;
     
-    console.log('💰 Ticket price calculation:', {
-      cartItems_length: cartItems?.length,
-      cartItems,
-      calculated_ticketPrice: ticketPrice,
-    });
-    
     // 🔑 CRITICAL: Calculate fees and commission
     // Processing fee: ₦100 flat for tickets ≤ ₦5,000, or 1.5% for > ₦5,000
     const processingFee = ticketPrice <= 5000 ? 100 : Math.round((ticketPrice * 1.5) / 100);
@@ -209,14 +184,7 @@ export const initiatePaymentController = async (req, res) => {
     const organizerEarnings = ticketPrice * 0.97;
     const platformNetProfit = platformCommission;
     
-    console.log('💰 Fee calculation:', {
-      ticketPrice,
-      processingFee,
-      totalAmount,
-      squadcoFee: squadcoFee.toFixed(2),
-      platformCommission: platformCommission.toFixed(2),
-      organizerEarnings: organizerEarnings.toFixed(2),
-    });
+    console.log('💰 ticketPrice=₦%s processingFee=₦%s total=₦%s', ticketPrice, processingFee, totalAmount);
     
     // Create timeout promise for transaction insert
     const txTimeoutPromise = new Promise((_, reject) =>
@@ -387,18 +355,8 @@ export const verifyPaymentController = async (req, res) => {
       });
     }
 
-    // 🔑 CRITICAL: Log incoming reference with hidden character detection
-    logReference('🔎 INCOMING REF', reference);
-
     // 🔑 CRITICAL: Normalize reference
     const normalizedReference = normalizeReference(reference);
-    logReference('🧠 NORMALIZED REF', normalizedReference);
-
-    console.log('🔄 Payment Verification Request:', {
-      incomingReference: reference,
-      normalizedReference,
-      timestamp: new Date().toISOString(),
-    });
 
     // Validate reference format
     if (!isValidReferenceFormat(normalizedReference)) {
@@ -411,14 +369,9 @@ export const verifyPaymentController = async (req, res) => {
     }
 
     // 🔑 CRITICAL: Look up transaction in database with normalized reference
-    console.log('🔎 LOOKING UP TRANSACTION WITH NORMALIZED REFERENCE:', normalizedReference);
-    
-    // Create timeout promise for transaction lookup
     const lookupTimeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Supabase transaction lookup timed out after 5 seconds')), 5000)
     );
-    
-    // Use let so we can reassign if fallback search finds it
     let { data: transaction, error: txError } = await Promise.race([
       supabase
         .from('transactions')
@@ -478,14 +431,7 @@ export const verifyPaymentController = async (req, res) => {
       }
     }
 
-    console.log('✅ Transaction found in DB:', {
-      id: transaction.id,
-      reference: transaction.reference,
-      status: transaction.status,
-      dbRefNormalized: normalizeReference(transaction.reference),
-      incomingRefNormalized: normalizedReference,
-      match: normalizeReference(transaction.reference) === normalizedReference ? '✅ MATCH' : '❌ MISMATCH',
-    });
+    console.log('✅ Transaction found in DB: status=%s', transaction.status);
 
     // Check if already verified — return the same full shape as the normal path
     if (transaction.status === 'success') {
@@ -574,7 +520,6 @@ export const verifyPaymentController = async (req, res) => {
 
     // 🔑 CRITICAL: Call Squad verification service with 8s timeout (Vercel limit is 10s)
     console.log('🔄 Verifying with Squad API...');
-    console.log('📤 Calling Squad API with reference:', normalizedReference);
     
     let result;
     try {
@@ -676,8 +621,6 @@ export const verifyPaymentController = async (req, res) => {
     console.log('✅ [RACE WON] This call claimed the transaction — proceeding with full processing');
 
     // ─── Extract cartItems / attendees from the stored squadco_response ──────────
-    // The initiation controller stored { cartItems, attendees, amount, buyerEmail }
-    // in squadco_response before calling Squad, so it's always available here.
     let rawResponse = transaction.squadco_response || {};
     if (typeof rawResponse === 'string') {
       try { rawResponse = JSON.parse(rawResponse); } catch (_) { rawResponse = {}; }
@@ -688,13 +631,7 @@ export const verifyPaymentController = async (req, res) => {
       ? (attendees[0]?.phone || attendees[0]?.phoneNumber || null)
       : null;
 
-    // ── Deep diagnostic: log every key/value on every cart item ──────────────
-    console.log(`[PER-TYPE] cartItems count: ${cartItems.length}`);
-    cartItems.forEach((item, idx) => {
-      console.log(`[PER-TYPE] cartItems[${idx}] keys:`, Object.keys(item));
-      console.log(`[PER-TYPE] cartItems[${idx}] full:`, JSON.stringify(item));
-    });
-    console.log('[PER-TYPE] attendees count:', attendees.length);
+    console.log(`[PER-TYPE] Processing ${cartItems.length} cart item(s)`);
 
     // ─── Fetch event details (for email only — name resolution uses item.name directly) ──
     let eventData = null;

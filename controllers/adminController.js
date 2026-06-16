@@ -233,39 +233,32 @@ export const approveEvent = async (req, res) => {
     });
 
     // ✅ Fire-and-forget: fetch organizer email and send notification AFTER response
-    console.log(`[APPROVE EMAIL] Starting background email task for event ${id}, organizer ${event.organizer_id}`);
+    console.log(`[APPROVE EMAIL] Starting background email task for event ${id}`);
     (async () => {
       try {
-        console.log(`[APPROVE EMAIL] Background task running for organizer ${event.organizer_id}`);
         let orgEmail = '';
         let orgName = 'Organizer';
 
-        // Try profiles first (fast)
         const { data: profile, error: profileErr } = await supabaseAdmin
           .from('profiles')
           .select('full_name, email')
           .eq('id', event.organizer_id)
           .single();
 
-        console.log(`[APPROVE EMAIL] organizer_id=${event.organizer_id} profile.email="${profile?.email}" profileErr=${profileErr?.message || 'none'}`);
-
         if (profile?.email) {
           orgEmail = profile.email;
           orgName = profile.full_name || 'Organizer';
         } else {
           // Fallback to auth.users — always works for Google OAuth
-          console.log('[APPROVE EMAIL] profiles.email empty/null — falling back to auth.users');
+          console.log('[APPROVE EMAIL] profiles.email missing — falling back to auth.users');
           try {
-            const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.getUserById(event.organizer_id);
-            console.log(`[APPROVE EMAIL] auth.users email="${authData?.user?.email}" authErr=${authErr?.message || 'none'}`);
+            const { data: authData } = await supabaseAdmin.auth.admin.getUserById(event.organizer_id);
             orgEmail = authData?.user?.email || '';
             orgName = profile?.full_name || authData?.user?.user_metadata?.full_name || 'Organizer';
           } catch (authCallErr) {
             console.error('[APPROVE EMAIL] auth.admin.getUserById threw:', authCallErr.message);
           }
         }
-
-        console.log(`[APPROVE EMAIL] Final orgEmail="${orgEmail}" orgName="${orgName}"`);
 
         if (orgEmail) {
           const { sendEventApprovedEmail } = await import('../services/emailService.js');
@@ -349,30 +342,25 @@ export const rejectEvent = async (req, res) => {
         let orgEmail = '';
         let orgName = 'Organizer';
 
-        const { data: profile, error: profileErr } = await supabaseAdmin
+        const { data: profile } = await supabaseAdmin
           .from('profiles')
           .select('full_name, email')
           .eq('id', event.organizer_id)
           .single();
 
-        console.log(`[REJECT EMAIL] organizer_id=${event.organizer_id} profile.email="${profile?.email}" profileErr=${profileErr?.message || 'none'}`);
-
         if (profile?.email) {
           orgEmail = profile.email;
           orgName = profile.full_name || 'Organizer';
         } else {
-          console.log('[REJECT EMAIL] profiles.email empty/null — falling back to auth.users');
+          console.log('[REJECT EMAIL] profiles.email missing — falling back to auth.users');
           try {
-            const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.getUserById(event.organizer_id);
-            console.log(`[REJECT EMAIL] auth.users email="${authData?.user?.email}" authErr=${authErr?.message || 'none'}`);
+            const { data: authData } = await supabaseAdmin.auth.admin.getUserById(event.organizer_id);
             orgEmail = authData?.user?.email || '';
             orgName = profile?.full_name || authData?.user?.user_metadata?.full_name || 'Organizer';
           } catch (authCallErr) {
             console.error('[REJECT EMAIL] auth.admin.getUserById threw:', authCallErr.message);
           }
         }
-
-        console.log(`[REJECT EMAIL] Final orgEmail="${orgEmail}" orgName="${orgName}"`);
 
         if (orgEmail) {
           const { sendEventRejectedEmail } = await import('../services/emailService.js');
@@ -901,11 +889,7 @@ export const getDashboardStats = async (req, res) => {
 
     console.log('✅ Dashboard stats compiled successfully:', stats);
 
-    // ✅ Log pending actions specifically for debugging
-    console.log('🔔 PENDING ACTIONS DEBUG:', {
-      pendingWithdrawals: stats.pendingWithdrawals,
-      pendingEventApprovals: stats.pendingEventApprovals,
-    });
+    console.log('🔔 Pending: withdrawals=%s approvals=%s', stats.pendingWithdrawals, stats.pendingEventApprovals);
 
     return res.status(200).json({
       success: true,
@@ -2309,7 +2293,7 @@ export const fixWalletIntegrity = async (req, res) => {
           console.error(`[WALLET-FIX] Failed to fix wallet for ${wallet.organizer_id}:`, updateErr.message);
         } else {
           fixedCount++;
-          console.log(`[WALLET-FIX] Fixed organizer ${wallet.organizer_id}: ${currentBalance} → ${correctBalance}`);
+          console.log(`[WALLET-FIX] Fixed organizer balance`);
         }
       }
     }
@@ -2386,7 +2370,7 @@ export const resendTransactionEmail = async (req, res) => {
       return res.status(500).json({ success: false, error: result.error });
     }
 
-    console.log(`[RESEND] Confirmation email resent for ${reference} to ${transaction.buyer_email}`);
+    console.log(`[RESEND] Confirmation email resent for transaction`);
 
     return res.status(200).json({
       success: true,
