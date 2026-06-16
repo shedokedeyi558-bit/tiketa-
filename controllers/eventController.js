@@ -42,7 +42,7 @@ export const getOrganizerEvents = async (req, res) => {
     // ✅ Build query — narrow select, filter at DB level, limit rows
     let query = supabase
       .from('events')
-      .select('id, title, description, image_url, date, start_time, end_time, end_date, location, category, status, organizer_id, ticket_types, total_tickets, tickets_sold, ticket_price, created_at, updated_at')
+      .select('id, title, description, image_url, date, start_time, end_time, end_date, location, category, status, organizer_id, ticket_types, total_tickets, tickets_sold, ticket_price, require_attendee_names, created_at, updated_at')
       .eq('organizer_id', userId)
       .limit(100);
 
@@ -182,7 +182,7 @@ export const getAllEvents = async (req, res) => {
     // so no date math is needed here. All active events are visible regardless of start date.
     let query = supabase
       .from('events')
-      .select('id, title, description, image_url, date, start_time, end_time, end_date, location, category, status, organizer_id, ticket_types, total_tickets, tickets_sold, ticket_price, created_at, updated_at')
+      .select('id, title, description, image_url, date, start_time, end_time, end_date, location, category, status, organizer_id, ticket_types, total_tickets, tickets_sold, ticket_price, require_attendee_names, created_at, updated_at')
       .eq('status', 'active');
 
     // dateFilter=past is kept for browsability but no longer hides active events prematurely
