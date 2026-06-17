@@ -474,7 +474,9 @@ export const payWithdrawalController = async (req, res) => {
     const squadcoUrl      = process.env.SQUADCO_API_URL || 'https://sandbox-api-d.squadco.com';
     const merchantId      = process.env.SQUAD_MERCHANT_ID || 'SBS3U9LRZR';
     const transferReference = `${merchantId}_${withdrawal.id}`;
-    const amountInKobo    = Math.round(withdrawal.amount * 100);
+    // Use amount_received (after ₦100 fee) — fall back for old records without the column
+    const sendAmount   = withdrawal.amount_received != null ? withdrawal.amount_received : (withdrawal.amount - 100);
+    const amountInKobo = Math.round(sendAmount * 100);
 
     // ✅ Step: Account lookup (required by Squad before transfer)
     console.log(`🔍 Looking up account before transfer: ${withdrawal.bank_account_number} (${bankCode})`);
@@ -806,7 +808,9 @@ export const approveAndPayController = async (req, res) => {
     const squadcoUrl    = process.env.SQUADCO_API_URL || 'https://sandbox-api-d.squadco.com';
     const merchantId    = process.env.SQUAD_MERCHANT_ID || 'SBS3U9LRZR';
     const transferReference = `${merchantId}_${id}`;
-    const amountInKobo  = Math.round(withdrawal.amount * 100);
+    // Use amount_received (after ₦100 fee) — fall back for old records without the column
+    const sendAmount   = withdrawal.amount_received != null ? withdrawal.amount_received : (withdrawal.amount - 100);
+    const amountInKobo = Math.round(sendAmount * 100);
 
     // ✅ Account lookup (required by Squad before transfer)
     console.log(`[APPROVE-AND-PAY] Looking up account: ${withdrawal.bank_account_number} (${bankCode})`);

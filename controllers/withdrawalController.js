@@ -92,13 +92,25 @@ export const createWithdrawalRequestController = async (req, res) => {
 
     console.log('📝 Creating withdrawal request...');
 
-    // ✅ RULE 1: Validate minimum amount (₦5,000)
+    const WITHDRAWAL_FEE = 100; // ₦100 flat fee per withdrawal
+
+    // ✅ RULE 1: Validate minimum amount (₦5,000) and that fee leaves something to send
     if (!amount || amount < 5000) {
       console.warn('❌ Minimum withdrawal amount not met:', amount);
       return res.status(400).json({
         success: false,
         error: 'Invalid amount',
         message: 'Minimum withdrawal amount is ₦5,000',
+      });
+    }
+
+    const amountToSend = amount - WITHDRAWAL_FEE; // what actually reaches the bank
+
+    if (amountToSend <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid amount',
+        message: 'Requested amount must be greater than the ₦100 withdrawal fee',
       });
     }
 
@@ -199,7 +211,9 @@ export const createWithdrawalRequestController = async (req, res) => {
 
     // ✅ Create withdrawal request
     const requestResult = await createWithdrawalRequest(userId, {
-      amount,
+      amount,                    // full requested amount — leaves wallet
+      amountToSend,              // amount_received: what reaches the bank after ₦100 fee
+      withdrawalFee: WITHDRAWAL_FEE,
       bankName: bank_name,
       accountNumber: account_number,
       accountName: account_name,
@@ -247,10 +261,12 @@ export const createWithdrawalRequestController = async (req, res) => {
       success: true,
       message: 'Withdrawal request submitted successfully',
       data: {
-        request_id: requestResult.request.id,
-        amount: requestResult.request.amount,
-        status: requestResult.request.status,
-        requested_at: requestResult.request.requested_at,
+        request_id:      requestResult.request.id,
+        amount:          requestResult.request.amount,           // full requested amount
+        withdrawal_fee:  requestResult.request.withdrawal_fee,   // ₦100
+        amount_received: requestResult.request.amount_received,  // what reaches bank
+        status:          requestResult.request.status,
+        requested_at:    requestResult.request.requested_at,
       },
     });
   } catch (error) {

@@ -117,14 +117,12 @@ export async function createOrganizerWallet(organizerId) {
  */
 export async function createWithdrawalRequest(organizerId, withdrawalData) {
   try {
-    const { amount, bankName, accountNumber, accountName, bankCode } = withdrawalData;
+    const { amount, amountToSend, withdrawalFee, bankName, accountNumber, accountName, bankCode } = withdrawalData;
 
     if (!organizerId || !amount || !bankName || !accountNumber || !accountName) {
       console.error('❌ Invalid withdrawal request params');
       return { success: false, error: 'Missing required fields' };
     }
-
-    console.log(`⏳ Creating withdrawal request: ₦${amount} from organizer ${organizerId}`);
 
     // Fetch organizer's wallet ID
     const { data: wallet, error: walletError } = await supabase
@@ -141,19 +139,24 @@ export async function createWithdrawalRequest(organizerId, withdrawalData) {
     // Use provided bank_code if available, fall back to name lookup
     const resolvedBankCode = bankCode || getBankCode(bankName);
 
+    // amount_received = what actually hits the bank (amount minus ₦100 fee)
+    const resolvedAmountToSend = amountToSend != null ? amountToSend : (amount - (withdrawalFee || 100));
+
     const { data, error } = await supabase
       .from('withdrawals')
       .insert({
-        organizer_id: organizerId,
-        wallet_id: wallet.id,
-        amount: parseFloat(amount),
-        bank_name: bankName,
+        organizer_id:        organizerId,
+        wallet_id:           wallet.id,
+        amount:              parseFloat(amount),
+        withdrawal_fee:      withdrawalFee || 100,
+        amount_received:     resolvedAmountToSend,
+        bank_name:           bankName,
         bank_account_number: accountNumber,
-        bank_code: resolvedBankCode,
-        account_name: accountName,
-        reference: `WDR_${Date.now()}_${organizerId.slice(0, 8)}`,
-        status: 'pending',
-        requested_at: new Date().toISOString(),
+        bank_code:           resolvedBankCode,
+        account_name:        accountName,
+        reference:           `WDR_${Date.now()}_${organizerId.slice(0, 8)}`,
+        status:              'pending',
+        requested_at:        new Date().toISOString(),
       })
       .select()
       .single();
