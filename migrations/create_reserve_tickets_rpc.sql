@@ -1,11 +1,12 @@
 -- Migration: Atomic ticket availability check using row-level lock
 -- Run this in Supabase SQL editor BEFORE deploying the backend changes.
 --
--- NOTE on data model:
---   - ticket_types table stores capacity (quantity column) with a text 'id' that may
---     be a frontend-generated string (e.g. "1780299070611-uck9go"), not a UUID.
---   - Transactions store the tier_id inside squadco_response JSONB as a text string.
---   - We lock the ticket_types row by text id to serialize concurrent reservations.
+-- v2 changes vs v1:
+--   - Also counts recent PENDING transactions (created within last 15 min) as
+--     "held" seats. This prevents two concurrent buyers from both passing the
+--     availability check for the last ticket.
+--   - Stale pending rows (>15 min) are cleaned up by the server-side job in
+--     services/pendingTransactionCleanup.js and do NOT count as held.
 
 CREATE OR REPLACE FUNCTION reserve_tickets(
   p_event_id TEXT,
@@ -18,10 +19,10 @@ AS $$
 DECLARE
   v_capacity  INTEGER;
   v_sold      INTEGER;
+  v_held      INTEGER;  -- pending transactions within last 15 min (in-checkout holds)
   v_available INTEGER;
 BEGIN
   -- Lock the ticket_types row for this tier to prevent concurrent reads
-  -- Using text cast so it works whether id is UUID or a string
   SELECT quantity INTO v_capacity
   FROM ticket_types
   WHERE id::TEXT = p_tier_id
@@ -38,20 +39,30 @@ BEGIN
     RETURN jsonb_build_object('success', true, 'available', NULL);
   END IF;
 
-  -- Count confirmed sold tickets for this tier from squadco_response JSONB
+  -- Count confirmed sold tickets for this tier
   SELECT COALESCE(SUM((quantity)::INTEGER), 0) INTO v_sold
   FROM transactions
   WHERE event_id::TEXT = p_event_id
     AND status = 'success'
     AND (squadco_response->>'tier_id') = p_tier_id;
 
-  v_available := v_capacity - v_sold;
+  -- Count in-flight pending transactions in the last 15 minutes as held seats.
+  -- This prevents oversell when two buyers simultaneously checkout the last ticket.
+  -- Stale pending rows (>15 min) are expired by the backend cleanup job and don't count.
+  SELECT COALESCE(SUM((quantity)::INTEGER), 0) INTO v_held
+  FROM transactions
+  WHERE event_id::TEXT = p_event_id
+    AND status = 'pending'
+    AND (squadco_response->>'tier_id') = p_tier_id
+    AND created_at > NOW() - INTERVAL '15 minutes';
+
+  v_available := v_capacity - v_sold - v_held;
 
   IF p_quantity > v_available THEN
     RETURN jsonb_build_object(
       'success',   false,
-      'available', v_available,
-      'message',   format('Only %s ticket(s) available for this tier', v_available)
+      'available', GREATEST(v_available, 0),
+      'message',   format('Only %s ticket(s) available for this tier', GREATEST(v_available, 0))
     );
   END IF;
 

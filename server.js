@@ -40,6 +40,7 @@ import withdrawalRoutes from './routes/withdrawalRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import { updateExpiredEvents } from './services/eventExpiryService.js';
+import { startPendingCleanupJob } from './services/pendingTransactionCleanup.js';
 import { adminAuth } from './middlewares/adminMiddleware.js';
 import { createClient } from '@supabase/supabase-js';
 import { paymentLimiter, authLimiter, generalLimiter } from './middlewares/rateLimiters.js';
@@ -414,6 +415,9 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
   console.log(`🔗 API Base: http://localhost:${PORT}/api/v1`);
+
+  // ✅ Start pending transaction cleanup job (expires stale pending rows every 5 min)
+  startPendingCleanupJob();
 });
 
 // Global error handlers to catch the "crash"
