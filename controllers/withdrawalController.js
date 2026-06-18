@@ -94,13 +94,20 @@ export const createWithdrawalRequestController = async (req, res) => {
 
     const WITHDRAWAL_FEE = 100; // ₦100 flat fee per withdrawal
 
-    // ✅ RULE 1: Validate minimum amount (₦5,000) and that fee leaves something to send
+    // ✅ RULE 1: Validate amount range (₦5,000 – ₦5,000,000)
     if (!amount || amount < 5000) {
-      console.warn('❌ Minimum withdrawal amount not met:', amount);
       return res.status(400).json({
         success: false,
         error: 'Invalid amount',
         message: 'Minimum withdrawal amount is ₦5,000',
+      });
+    }
+
+    if (amount > 5000000) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid amount',
+        message: 'Maximum withdrawal amount is ₦5,000,000',
       });
     }
 
