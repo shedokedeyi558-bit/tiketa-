@@ -471,7 +471,7 @@ export const payWithdrawalController = async (req, res) => {
     }
 
     // Call Squadco Transfer API
-    const squadcoUrl      = process.env.SQUADCO_API_URL || 'https://sandbox-api-d.squadco.com';
+    const squadcoUrl      = process.env.SQUADCO_API_URL || 'https://api-d.squadco.com';
     const merchantId      = process.env.SQUAD_MERCHANT_ID || 'SBS3U9LRZR';
     const transferReference = `${merchantId}_${withdrawal.id}`;
     // Use amount_received (after ₦100 fee) — fall back for old records without the column
@@ -805,7 +805,7 @@ export const approveAndPayController = async (req, res) => {
     }
 
     // 4. Call Squadco Transfer API
-    const squadcoUrl    = process.env.SQUADCO_API_URL || 'https://sandbox-api-d.squadco.com';
+    const squadcoUrl    = process.env.SQUADCO_API_URL || 'https://api-d.squadco.com';
     const merchantId    = process.env.SQUAD_MERCHANT_ID || 'SBS3U9LRZR';
     const transferReference = `${merchantId}_${id}`;
     // Use amount_received (after ₦100 fee) — fall back for old records without the column

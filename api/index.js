@@ -17,7 +17,7 @@ if (missingEnvVars.length > 0) {
 console.log('✅ Environment variables loaded:');
 console.log('   - SQUADCO_API_KEY PREFIX:', process.env.SQUADCO_API_KEY?.substring(0, 20) + '...');
 console.log('   - SQUADCO_PUBLIC_KEY:', process.env.SQUADCO_PUBLIC_KEY?.substring(0, 10) + '...');
-console.log('   - SQUADCO_API_URL:', process.env.SQUADCO_API_URL || 'https://sandbox-api-d.squadco.com (default)');
+console.log('   - SQUADCO_API_URL:', process.env.SQUADCO_API_URL || 'https://api-d.squadco.com (default)');
 console.log('   - SUPABASE_URL:', process.env.SUPABASE_URL?.substring(0, 20) + '...');
 
 // Import routes

@@ -6,9 +6,7 @@ const SQUADCO_PUBLIC_KEY = process.env.SQUADCO_PUBLIC_KEY;
 const MOCK_MODE = process.env.MOCK_PAYMENT === 'true'; // Enable mock mode for testing
 
 // Correct Squadco API URLs
-const SQUADCO_API_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://api.squadco.com' 
-  : 'https://sandbox-api.squadco.com';
+const SQUADCO_API_URL = process.env.SQUADCO_API_URL || 'https://api-d.squadco.com';
 
 /**
  * Verify payment with Squadco API
