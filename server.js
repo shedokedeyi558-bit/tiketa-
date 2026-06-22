@@ -398,16 +398,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Keep-alive ping to prevent Render from spinning down
-const RENDER_URL = process.env.RENDER_EXTERNAL_URL || 'https://tiketa-backend-cf8t.onrender.com';
-setInterval(async () => {
-  try {
-    const response = await fetch(`${RENDER_URL}/api/health`);
-    console.log('[KEEP-ALIVE] Ping sent, status:', response.status);
-  } catch (e) {
-    console.log('[KEEP-ALIVE] Ping failed:', e.message);
-  }
-}, 14 * 60 * 1000);
 
 // Start server
 const PORT = process.env.PORT || 5001; // Changed default to 5001 to match user config
