@@ -408,6 +408,14 @@ app.listen(PORT, () => {
 
   // ✅ Start pending transaction cleanup job (expires stale pending rows every 5 min)
   startPendingCleanupJob();
+
+  // ✅ Event expiry auto-check every 7 minutes
+  const runExpiryCheck = async () => {
+    const result = await updateExpiredEvents();
+    console.log(`[EXPIRY] Auto-check complete — marked ${result.expired ?? 0} event(s) as ended`);
+  };
+  runExpiryCheck();
+  setInterval(runExpiryCheck, 7 * 60 * 1000);
 });
 
 // Global error handlers to catch the "crash"
