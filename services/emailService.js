@@ -37,7 +37,7 @@ if (!resendClient) {
 /**
  * Internal helper — sends via Resend if available, else Gmail SMTP
  */
-async function sendEmail({ to, subject, html }) {
+export async function sendEmail({ to, subject, html }) {
   const fromAddr = process.env.EMAIL_FROM || 'Ticketa <noreply@ticketa.org>';
 
   if (resendClient) {

@@ -749,21 +749,161 @@ export const createEvent = async (req, res) => {
   }
 };
 
-// Update event
+// Update event — organizer only, tiered field rules
 export const updateEvent = async (req, res) => {
   try {
     const { id } = req.params;
-    // TODO: Update in database
-    res.status(200).json({
+    const organizerId = req.user?.id;
+
+    if (!organizerId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    // ── Fetch the event and verify ownership ──────────────────────────────────
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabaseAdmin = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+
+    const { data: event, error: fetchErr } = await supabaseAdmin
+      .from('events')
+      .select('id, title, organizer_id, status, date, end_date, start_time, end_time, ticket_types, total_tickets')
+      .eq('id', id)
+      .single();
+
+    if (fetchErr || !event) {
+      return res.status(404).json({ success: false, error: 'Event not found' });
+    }
+    if (event.organizer_id !== organizerId) {
+      return res.status(403).json({ success: false, error: 'You can only edit your own events' });
+    }
+    if (event.status === 'ended' || event.status === 'cancelled') {
+      return res.status(400).json({ success: false, error: 'Ended or cancelled events cannot be edited' });
+    }
+
+    // ── Check if any tickets have been sold ────────────────────────────────────
+    const { count: soldCount } = await supabaseAdmin
+      .from('transactions')
+      .select('id', { count: 'exact', head: true })
+      .eq('event_id', id)
+      .eq('status', 'success');
+
+    const hasSales = (soldCount ?? 0) > 0;
+
+    // ── Build the update payload with tiered rules ─────────────────────────────
+    const {
+      // Always editable
+      title, description, image_url, location, category,
+      // Editable only before sales
+      ticket_types, total_tickets, ticket_price,
+      // Date/time — editable but notifies buyers
+      date, end_date, start_time, end_time,
+    } = req.body;
+
+    const updates = {};
+
+    // Tier 1: always editable
+    if (title       !== undefined) updates.title       = title.trim();
+    if (description !== undefined) updates.description = description;
+    if (image_url   !== undefined) updates.image_url   = image_url;
+    if (location    !== undefined) updates.location    = location.trim();
+    if (category    !== undefined) updates.category    = category;
+
+    // Tier 2: locked after first sale
+    if (hasSales) {
+      const lockedFields = ['ticket_types', 'total_tickets', 'ticket_price'].filter(f => req.body[f] !== undefined);
+      if (lockedFields.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Cannot change ticket types, capacity or prices after tickets have been sold',
+          locked_fields: lockedFields,
+        });
+      }
+    } else {
+      if (ticket_types   !== undefined) updates.ticket_types   = ticket_types;
+      if (total_tickets  !== undefined) updates.total_tickets  = total_tickets;
+      if (ticket_price   !== undefined) updates.ticket_price   = ticket_price;
+    }
+
+    // Tier 3: date/time — editable, flag for buyer notification
+    const dateChanged = (date && date !== event.date?.split('T')[0]) ||
+                        (end_date && end_date !== event.end_date?.split('T')[0]) ||
+                        (start_time && start_time !== event.start_time) ||
+                        (end_time && end_time !== event.end_time);
+
+    if (date       !== undefined) updates.date       = date;
+    if (end_date   !== undefined) updates.end_date   = end_date;
+    if (start_time !== undefined) updates.start_time = start_time;
+    if (end_time   !== undefined) updates.end_time   = end_time;
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ success: false, error: 'No valid fields provided to update' });
+    }
+
+    updates.updated_at = new Date().toISOString();
+
+    // ── Apply the update ───────────────────────────────────────────────────────
+    const { data: updated, error: updateErr } = await supabaseAdmin
+      .from('events')
+      .update(updates)
+      .eq('id', id)
+      .select('id, title, status, date, end_date, start_time, end_time, location, category, image_url, description, ticket_types, total_tickets, ticket_price, updated_at')
+      .single();
+
+    if (updateErr) {
+      console.error('❌ Event update failed:', updateErr.message);
+      return res.status(500).json({ success: false, error: updateErr.message });
+    }
+
+    console.log(`✅ Event ${id} updated by organizer ${organizerId}`);
+
+    // ── Fire-and-forget: notify buyers if date/time changed ───────────────────
+    if (dateChanged && hasSales) {
+      (async () => {
+        try {
+          const { data: buyers } = await supabaseAdmin
+            .from('transactions')
+            .select('buyer_email, buyer_name')
+            .eq('event_id', id)
+            .eq('status', 'success');
+
+          const uniqueBuyers = [...new Map((buyers || []).map(b => [b.buyer_email, b])).values()];
+          const { sendEmail } = await import('../services/emailService.js');
+
+          for (const buyer of uniqueBuyers) {
+            await sendEmail({
+              to: buyer.buyer_email,
+              subject: `Event date update — ${updated.title}`,
+              html: `
+                <p>Hi ${buyer.buyer_name},</p>
+                <p>The organizer of <strong>${updated.title}</strong> has updated the event date or time.</p>
+                <p><strong>New date:</strong> ${updated.date ? updated.date.split('T')[0] : ''}</p>
+                ${updated.start_time ? `<p><strong>New time:</strong> ${updated.start_time}${updated.end_time ? ' – ' + updated.end_time : ''}</p>` : ''}
+                <p><strong>Location:</strong> ${updated.location}</p>
+                <p>If this no longer works for you, please contact the event organizer.</p>
+                <p>— Ticketa</p>
+              `,
+            }).catch(e => console.warn('[EVENT UPDATE] Email to buyer failed (non-blocking):', e.message));
+          }
+          console.log(`[EVENT UPDATE] Date-change emails sent to ${uniqueBuyers.length} buyer(s)`);
+        } catch (e) {
+          console.error('[EVENT UPDATE] Buyer notification error (non-blocking):', e.message);
+        }
+      })();
+    }
+
+    return res.status(200).json({
       success: true,
       message: 'Event updated successfully',
-      data: {},
+      data: updated,
+      warnings: dateChanged && hasSales
+        ? ['Buyers have been notified of the date/time change by email']
+        : [],
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    console.error('❌ updateEvent error:', error.message);
+    return res.status(500).json({ success: false, error: error.message });
   }
 };
 

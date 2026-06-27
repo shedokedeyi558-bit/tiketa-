@@ -23,8 +23,8 @@ router.get('/', getAllEvents);
 router.get('/:id', getEventById);
 
 // Other routes
-router.post('/', createEvent);
-router.put('/:id', updateEvent);
+router.post('/', verifyToken, createEvent);
+router.put('/:id', verifyToken, updateEvent);
 router.delete('/:id', deleteEvent);
 
 export default router;
