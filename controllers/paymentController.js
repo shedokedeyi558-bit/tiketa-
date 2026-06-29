@@ -11,7 +11,7 @@ import {
 } from '../services/emailService.js';
 
 const PLATFORM_COMMISSION_PERCENTAGE = 3; // 3% of ticket_price always
-const FLAT_PROCESSING_FEE = 100; // ₦100 for tickets ≤ ₦5,000
+const FLAT_PROCESSING_FEE = 100; // ₦100 for tickets ≤ ₦7,000
 const PERCENTAGE_PROCESSING_FEE = 1.5; // 1.5% for tickets > ₦5,000
 const SQUADCO_RATE = 1.2; // 1.2% SquadCo charge
 const ADMIN_CHARGE_PERCENTAGE = 0.35; // 35% (0.35 as decimal)
@@ -112,7 +112,7 @@ export const initiatePayment = async (req, res) => {
       const qty = parseInt(item.quantity) || 1;
       return acc + (price * qty);
     }, 0);
-    const processingFee = Number(ticketPrice) <= 5000
+    const processingFee = Number(ticketPrice) <= 7000
       ? FLAT_PROCESSING_FEE
       : Math.round((Number(ticketPrice) * PERCENTAGE_PROCESSING_FEE) / 100);
     const totalAmount = ticketPrice + processingFee;
