@@ -734,6 +734,35 @@ export const createEvent = async (req, res) => {
         image_url: event.image_url,
       },
     });
+
+    // ✅ Fire-and-forget: notify admin that a new event is pending review
+    (async () => {
+      try {
+        const adminEmail = process.env.ADMIN_EMAIL || process.env.EMAIL_USER || 'support.ticketa@gmail.com';
+        const { sendEmail } = await import('../services/emailService.js');
+        await sendEmail({
+          to: adminEmail,
+          subject: `New event pending review — ${event.title}`,
+          html: `
+            <h2>New Event Submitted for Review</h2>
+            <p>An organizer has submitted a new event that needs your approval.</p>
+            <table style="border-collapse:collapse;font-size:14px;">
+              <tr><td style="padding:6px 12px;font-weight:bold;">Title</td><td style="padding:6px 12px;">${event.title}</td></tr>
+              <tr><td style="padding:6px 12px;font-weight:bold;">Date</td><td style="padding:6px 12px;">${event.date ? event.date.split('T')[0] : 'N/A'}</td></tr>
+              <tr><td style="padding:6px 12px;font-weight:bold;">Location</td><td style="padding:6px 12px;">${event.location}</td></tr>
+              <tr><td style="padding:6px 12px;font-weight:bold;">Organizer ID</td><td style="padding:6px 12px;">${event.organizer_id}</td></tr>
+            </table>
+            <br/>
+            <a href="https://ticketa.org/admin/events" style="background:#6c47ff;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;">
+              Review in Admin Dashboard →
+            </a>
+          `,
+        });
+        console.log('[NEW EVENT] Admin notification sent for event:', event.id);
+      } catch (e) {
+        console.error('[NEW EVENT] Admin notification failed (non-blocking):', e.message);
+      }
+    })();
   } catch (error) {
     console.error('❌ Create Event Error:', {
       message: error.message,
