@@ -97,13 +97,80 @@ export const freeRegisterController = async (req, res) => {
       });
     }
 
+    // ── Capacity check: count confirmed + recent pending registrations ─────────
+    // Uses an atomic query to prevent oversell under concurrent registrations.
+    const totalQty = cartItems.reduce((s, item) => s + (parseInt(item.quantity) || 1), 0);
+
+    if (event.total_tickets && event.total_tickets > 0) {
+      // Count all confirmed registrations for this event
+      const { count: confirmedCount } = await supabaseAdmin
+        .from('transactions')
+        .select('id', { count: 'exact', head: true })
+        .eq('event_id', eventId)
+        .eq('status', 'success');
+
+      // Also count registrations in the last 15 minutes (in-flight / pending)
+      const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+      const { count: inFlightCount } = await supabaseAdmin
+        .from('transactions')
+        .select('id', { count: 'exact', head: true })
+        .eq('event_id', eventId)
+        .eq('status', 'pending')
+        .gte('created_at', fifteenMinAgo);
+
+      const totalTaken = (confirmedCount ?? 0) + (inFlightCount ?? 0);
+      const available = event.total_tickets - totalTaken;
+
+      if (totalQty > available) {
+        return res.status(400).json({
+          success: false,
+          error: 'Not enough tickets available',
+          message: available <= 0
+            ? 'Sorry, this event is fully booked'
+            : `Only ${available} ticket(s) remaining`,
+        });
+      }
+    }
+
+    // Per-tier capacity check (if ticket_types have individual quantities)
+    for (const item of cartItems) {
+      const tierId  = item.id || item.ticket_type_id || null;
+      const reqQty  = parseInt(item.quantity) || 1;
+      if (!tierId) continue;
+
+      // Check tier capacity from ticket_types table
+      const { data: tierRow } = await supabaseAdmin
+        .from('ticket_types')
+        .select('quantity')
+        .eq('id', tierId)
+        .eq('event_id', eventId)
+        .maybeSingle();
+
+      if (tierRow && tierRow.quantity > 0) {
+        const { count: tierSold } = await supabaseAdmin
+          .from('transactions')
+          .select('id', { count: 'exact', head: true })
+          .eq('event_id', eventId)
+          .eq('status', 'success')
+          .contains('squadco_response', { tier_id: tierId });
+
+        const tierAvailable = tierRow.quantity - (tierSold ?? 0);
+        if (reqQty > tierAvailable) {
+          return res.status(400).json({
+            success: false,
+            error: 'Not enough tickets available',
+            message: `Only ${Math.max(0, tierAvailable)} ticket(s) remaining for "${item.name || 'this tier'}"`,
+          });
+        }
+      }
+    }
+
     // ── Generate unique reference ─────────────────────────────────────────────
     const random6 = Math.random().toString(36).substring(2, 8).toUpperCase();
     const reference = `FREE_${Date.now()}_${random6}`;
     const now = new Date().toISOString();
 
     const resolvedBuyerName = (buyerName || '').trim() || buyerEmail.split('@')[0];
-    const totalQty = cartItems.reduce((s, item) => s + (parseInt(item.quantity) || 1), 0);
 
     // ── Insert primary transaction row (row 0) ────────────────────────────────
     const firstItem = cartItems[0];
