@@ -88,6 +88,29 @@ export const freeRegisterController = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Event is not active' });
     }
 
+    // ── Security: verify the event actually has free ticket types ─────────────
+    // Prevents bypassing paid tickets by calling this endpoint with price=0
+    const ticketTypes = Array.isArray(event.ticket_types) ? event.ticket_types : [];
+    const hasFreeTicketType = ticketTypes.some(tt => Number(tt.price || 0) === 0);
+
+    // Also check ticket_types table
+    let hasFreeInTable = false;
+    if (!hasFreeTicketType) {
+      const { data: freeRows } = await supabaseAdmin
+        .from('ticket_types')
+        .select('id, price')
+        .eq('event_id', eventId)
+        .eq('price', 0);
+      hasFreeInTable = (freeRows?.length ?? 0) > 0;
+    }
+
+    if (!hasFreeTicketType && !hasFreeInTable) {
+      return res.status(400).json({
+        success: false,
+        error: 'This event does not have free tickets',
+      });
+    }
+
     // ── Security: all ticket prices must be 0 ────────────────────────────────
     const nonFreeItem = cartItems.find(item => Number(item.price || item.ticket_price || 0) !== 0);
     if (nonFreeItem) {
