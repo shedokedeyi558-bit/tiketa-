@@ -1,6 +1,5 @@
 import { supabase } from '../utils/supabaseClient.js';
 import { createClient } from '@supabase/supabase-js';
-import { updateExpiredEvents } from '../services/eventExpiryService.js';
 
 // ✅ Create admin client with service role key for admin operations
 const supabaseAdmin = createClient(
@@ -12,10 +11,6 @@ const supabaseAdmin = createClient(
 export const getAdminEvents = async (req, res) => {
   try {
     console.log('📅 Fetching all events for admin...');
-
-    // ✅ Check for expired events and update them to 'ended' status
-    const expiryResult = await updateExpiredEvents();
-    console.log('⏰ Expiry check result:', expiryResult);
 
     // ✅ Fetch all events — narrow select, limit rows
     const { data: events, error: eventsError } = await supabase
@@ -45,10 +40,7 @@ export const getAdminEvents = async (req, res) => {
     }
     console.log(`✅ Fetched organizer info for ${Object.keys(organizerMap).length} organizers`);
 
-    // ✅ Auto-expire past events — only mark ended when end_date+end_time has fully passed.
-    // Use end_date (not start date) so multi-day events are not prematurely ended.
-    // Delegate to updateExpiredEvents (which already handles WAT→UTC conversion correctly).
-    // The call at the top of this function already ran it — no need to duplicate the logic here.
+    // Expiry is handled by the 7-minute server interval (server.js) — not needed per-request
 
     // Fetch all successful transactions for revenue calculation
     const { data: transactions, error: txError } = await supabase

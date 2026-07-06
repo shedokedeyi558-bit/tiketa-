@@ -1,5 +1,5 @@
 import { supabase } from '../utils/supabaseClient.js';
-import { updateExpiredEvents, deleteEventIfNoSales } from '../services/eventExpiryService.js';
+import { deleteEventIfNoSales } from '../services/eventExpiryService.js';
 
 /**
  * ✅ UNIFIED ORGANIZER EVENTS ENDPOINT
@@ -20,10 +20,6 @@ import { updateExpiredEvents, deleteEventIfNoSales } from '../services/eventExpi
 export const getOrganizerEvents = async (req, res) => {
   try {
     const userId = req.user.id;
-    
-    // ✅ Check for expired events and update them to 'ended' status
-    const expiryResult = await updateExpiredEvents();
-    console.log('⏰ Expiry check result:', expiryResult);
     
     // ✅ Parse query parameters with defaults
     const status = req.query.status || 'all';
@@ -157,10 +153,6 @@ export const getOrganizerEvents = async (req, res) => {
 export const getAllEvents = async (req, res) => {
   try {
     console.log('📖 Fetching all public events');
-
-    // ✅ Check for expired events and update them to 'ended' status
-    const expiryResult = await updateExpiredEvents();
-    console.log('⏰ Expiry check result:', expiryResult);
 
     // ✅ Parse query parameters - default to upcoming events only
     const dateFilter = req.query.dateFilter || 'upcoming';
