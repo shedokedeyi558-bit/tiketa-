@@ -62,6 +62,23 @@ const app = express();
 // Trust proxy - fixes IP detection behind Render's proxy
 app.set('trust proxy', 'loopback, linklocal, uniquelocal');
 
+// ── Health checks — registered BEFORE all middleware for guaranteed < 5ms response ──
+// Pure liveness checks: no DB, no I/O, no rate limiting, no morgan logging.
+app.get('/api/health', (req, res) => {
+  const start = Date.now();
+  res.json({ status: 'ok', time: new Date().toISOString() });
+  const ms = Date.now() - start;
+  if (ms > 500) console.warn(`[HEALTH] /api/health slow: ${ms}ms`);
+});
+
+app.get('/api/v1/health', (req, res) => {
+  const start = Date.now();
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const ms = Date.now() - start;
+  if (ms > 500) console.warn(`[HEALTH] /api/v1/health slow: ${ms}ms`);
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Middleware
 const allowedOrigins = [
   'http://localhost:5173',
@@ -135,16 +152,6 @@ app.use(`/api/${process.env.API_VERSION}/auth/login`, authLimiter);
 // Payment initiate: 5 req / IP / 10 min
 app.use(`/api/${process.env.API_VERSION}/payments/squad/initiate`, paymentLimiter);
 // ─────────────────────────────────────────────────────────────────────────────
-
-// Health check endpoint (keep-alive ping)
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
-});
-
-// Versioned health check — used by frontend for network status detection
-app.get('/api/v1/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
 
 // API Routes
 app.use(`/api/${process.env.API_VERSION}/auth`, authRoutes);
